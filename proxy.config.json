@@ -2,6 +2,38 @@
   "proxyUrl": "https://github.com",
   "cookieSecret": "cookie secret",
   "sessionMaxAgeHours": 12,
+  "configurationSources": {
+    "enabled": false,
+    "reloadIntervalSeconds": 60,
+    "sources": [
+      {
+        "type": "file",
+        "enabled": false,
+        "path": "./external-config.json"
+      },
+      {
+        "type": "http",
+        "enabled": false,
+        "url": "http://config-service/git-proxy-config",
+        "headers": {},
+        "auth": {
+          "type": "bearer",
+          "token": ""
+        }
+      },
+      {
+        "type": "git",
+        "enabled": false,
+        "repository": "http://git-source/org/repo.git",
+        "branch": "main",
+        "path": "git-proxy/config.json",
+        "auth": {
+          "type": "ssh",
+          "privateKeyPath": ""
+        }
+      }
+    ]
+  },
   "tempPassword": {
     "sendEmail": false,
     "emailConfig": {}
@@ -11,6 +43,16 @@
       "project": "finos",
       "name": "git-proxy",
       "url": "https://github.com/finos/git-proxy.git"
+    },
+    {
+      "project": "citadel.red",
+      "name": "git-proxy-config",
+      "url": "https://gitlab.citadel.red/public-group/git-proxy-config.git"
+    },
+    {
+      "project": "dcoric",
+      "name": "recipes-api",
+      "url": "https://github.com/dcoric/recipes-api.git"
     }
   ],
   "sink": [
