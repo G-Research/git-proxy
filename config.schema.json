@@ -8,6 +8,7 @@
     "configurationSources": {
       "enabled": { "type": "boolean" },
       "reloadIntervalSeconds": { "type": "number" },
+      "merge": { "type": "boolean" },
       "sources": {
         "type": "array",
         "items": {

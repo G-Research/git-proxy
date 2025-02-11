@@ -53,13 +53,16 @@ class ConfigLoader extends EventEmitter {
           .map((source) => this.loadFromSource(source)),
       );
 
-      // Merge configurations in order
-      const newConfig = configs.reduce(
-        (acc, curr) => {
-          return this.deepMerge(acc, curr);
-        },
-        { ...this.config },
-      );
+      // Use merge strategy based on configuration
+      const shouldMerge = configurationSources.merge ?? true; // Default to true for backward compatibility
+      const newConfig = shouldMerge
+        ? configs.reduce(
+            (acc, curr) => {
+              return this.deepMerge(acc, curr);
+            },
+            { ...this.config },
+          )
+        : { ...this.config, ...configs[configs.length - 1] }; // Use last config for override
 
       // Emit change event if config changed
       if (JSON.stringify(newConfig) !== JSON.stringify(this.config)) {

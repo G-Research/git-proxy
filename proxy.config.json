@@ -3,8 +3,9 @@
   "cookieSecret": "cookie secret",
   "sessionMaxAgeHours": 12,
   "configurationSources": {
-    "enabled": false,
+    "enabled": true,
     "reloadIntervalSeconds": 60,
+    "merge": false,
     "sources": [
       {
         "type": "file",
@@ -23,13 +24,13 @@
       },
       {
         "type": "git",
-        "enabled": false,
-        "repository": "http://git-source/org/repo.git",
+        "enabled": true,
+        "repository": "https://gitlab.citadel.red/public-group/git-proxy-config",
         "branch": "main",
         "path": "git-proxy/config.json",
         "auth": {
           "type": "ssh",
-          "privateKeyPath": ""
+          "privateKeyPath": "/Users/dcoric/.ssh/bb_rsa"
         }
       }
     ]
@@ -38,23 +39,7 @@
     "sendEmail": false,
     "emailConfig": {}
   },
-  "authorisedList": [
-    {
-      "project": "finos",
-      "name": "git-proxy",
-      "url": "https://github.com/finos/git-proxy.git"
-    },
-    {
-      "project": "citadel.red",
-      "name": "git-proxy-config",
-      "url": "https://gitlab.citadel.red/public-group/git-proxy-config.git"
-    },
-    {
-      "project": "dcoric",
-      "name": "recipes-api",
-      "url": "https://github.com/dcoric/recipes-api.git"
-    }
-  ],
+  "authorisedList": [],
   "sink": [
     {
       "type": "fs",

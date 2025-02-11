@@ -212,6 +212,9 @@ dist
 # https://nextjs.org/blog/next-9-1#public-directory-support
 # public
 
+# git-config-cache
+.git-config-cache
+
 # vuepress build output
 .vuepress/dist
 

@@ -1,5 +1,7 @@
 const fs = require('fs');
 const ConfigLoader = require('./ConfigLoader');
+const proxy = require('../proxy');
+const { validate } = require('./file'); // Import the validate function
 
 const defaultSettings = require('../../proxy.config.json');
 const userSettingsPath = require('./file').configFile;
@@ -16,9 +18,31 @@ let _config = { ...defaultSettings, ...(_userSettings || {}) };
 const configLoader = new ConfigLoader(_config);
 
 // Handle configuration updates
-configLoader.on('configurationChanged', (newConfig) => {
+configLoader.on('configurationChanged', async (newConfig) => {
   console.log('Configuration updated from external source');
-  _config = newConfig;
+  try {
+    // 1. Stop existing services
+    await proxy.stop();
+
+    // 2. Update config
+    _config = newConfig;
+
+    // 3. Validate new configuration
+    validate(); // Use the imported validate function
+
+    // 4. Restart services with new config
+    await proxy.start();
+
+    console.log('Services restarted with new configuration');
+  } catch (error) {
+    console.error('Failed to apply new configuration:', error);
+    // Attempt to restart with previous config
+    try {
+      await proxy.start();
+    } catch (startError) {
+      console.error('Failed to restart services:', startError);
+    }
+  }
 });
 
 configLoader.on('configurationError', (error) => {
