@@ -3,6 +3,13 @@ const router = new express.Router();
 const passport = require('../passport').getPassport();
 const db = require('../../db');
 const passportType = passport.type;
+const { GIT_PROXY_UI_HOST: uiHost = 'http://localhost', NODE_ENV } = process.env;
+
+// TODO: Refactor this through proper .env loading. This handles redirects in dev.
+let uiPort = 3000;
+if (NODE_ENV === 'production') {
+  uiPort = process.env.GIT_PROXY_UI_PORT;
+}
 
 router.get('/', (req, res) => {
   res.status(200).json({
@@ -39,6 +46,30 @@ router.post('/login', passport.authenticate(passportType), async (req, res) => {
     res.status(500).send('Failed to login').end();
     return;
   }
+});
+
+router.get('/oidc', passport.authenticate(passportType));
+
+router.get('/oidc/callback', (req, res, next) => {
+  passport.authenticate(passportType, (err, user, info) => {
+    console.log('authenticate callback executed');
+    if (err) {
+      console.error('Authentication error:', err);
+      return res.status(401).end();
+    }
+    if (!user) {
+      console.error('No user found:', info);
+      return res.status(401).end();
+    }
+    req.logIn(user, (err) => {
+      if (err) {
+        console.error('Login error:', err);
+        return res.status(401).end();
+      }
+      console.log('Logged in successfully. User:', user);
+      return res.redirect(`${uiHost}:${uiPort}/dashboard/profile`);
+    });
+  })(req, res, next);
 });
 
 // when login is successful, retrieve user info
@@ -111,13 +142,13 @@ router.post('/gitAccount', async (req, res) => {
   }
 });
 
-router.get('/userLoggedIn', async (req, res) => {
+router.get('/me', async (req, res) => {
   if (req.user) {
     const user = JSON.parse(JSON.stringify(req.user));
-    delete user.password;
+    if (user && user.password) delete user.password;
     const login = user.username;
     const userVal = await db.findUser(login);
-    delete userVal.password;
+    if (userVal && userVal.password) delete userVal.password;
     res.send(userVal);
   } else {
     res.status(401).end();
