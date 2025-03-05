@@ -114,18 +114,18 @@ class ConfigLoader extends EventEmitter {
 
     // Clone or pull repository
     if (!fs.existsSync(repoDir)) {
-      const cloneArgs = ['clone', source.repository, repoDir];
+      const cloneCmd = `git clone ${source.repository} ${repoDir}`;
       if (source.auth?.type === 'ssh') {
         process.env.GIT_SSH_COMMAND = `ssh -i ${source.auth.privateKeyPath}`;
       }
-      await execAsync('git', cloneArgs);
+      await execAsync(cloneCmd);
     } else {
-      await execAsync('git', ['pull'], { cwd: repoDir });
+      await execAsync('git pull', { cwd: repoDir });
     }
 
     // Checkout specific branch if specified
     if (source.branch) {
-      await execAsync('git', ['checkout', source.branch], { cwd: repoDir });
+      await execAsync(`git checkout ${source.branch}`, { cwd: repoDir });
     }
 
     // Read and parse config file
