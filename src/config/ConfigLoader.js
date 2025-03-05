@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const { promisify } = require('util');
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const EventEmitter = require('events');
 
 class ConfigLoader extends EventEmitter {
@@ -107,6 +107,14 @@ class ConfigLoader extends EventEmitter {
   }
 
   async loadFromGit(source) {
+    // Validate inputs
+    if (!source.repository || typeof source.repository !== 'string') {
+      throw new Error('Invalid repository URL');
+    }
+    if (source.branch && typeof source.branch !== 'string') {
+      throw new Error('Invalid branch name');
+    }
+
     const tempDir = path.join(process.cwd(), '.git-config-cache');
     await fs.promises.mkdir(tempDir, { recursive: true });
 
@@ -114,18 +122,17 @@ class ConfigLoader extends EventEmitter {
 
     // Clone or pull repository
     if (!fs.existsSync(repoDir)) {
-      const cloneCmd = `git clone ${source.repository} ${repoDir}`;
       if (source.auth?.type === 'ssh') {
         process.env.GIT_SSH_COMMAND = `ssh -i ${source.auth.privateKeyPath}`;
       }
-      await execAsync(cloneCmd);
+      await execFileAsync('git', ['clone', source.repository, repoDir]);
     } else {
-      await execAsync('git pull', { cwd: repoDir });
+      await execFileAsync('git', ['pull'], { cwd: repoDir });
     }
 
     // Checkout specific branch if specified
     if (source.branch) {
-      await execAsync(`git checkout ${source.branch}`, { cwd: repoDir });
+      await execFileAsync('git', ['checkout', source.branch], { cwd: repoDir });
     }
 
     // Read and parse config file
