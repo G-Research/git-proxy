@@ -8,6 +8,11 @@
   },
   "authorisedList": [
     {
+      "project": "unlayer",
+      "name": "react-email-editor",
+      "url": "https://github.com/unlayer/react-email-editor"
+    },
+    {
       "project": "finos",
       "name": "git-proxy",
       "url": "https://github.com/finos/git-proxy.git"
@@ -97,5 +102,14 @@
   "urlShortener": "",
   "contactEmail": "",
   "csrfProtection": true,
-  "plugins": []
+  "plugins": [],
+  "ssh": {
+    "enabled": true,
+    "port": 2222,
+    "hostKey": {
+      "privateKeyPath": "/Users/dcoric/.ssh/bb_rsa",
+      "publicKeyPath": "/Users/dcoric//.ssh/bb_rsa.pub"
+    },
+    "authorizedKeysPath": "/Users/dcoric/.ssh/authorized_keys"
+  }
 }

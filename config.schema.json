@@ -78,6 +78,15 @@
           "type": "object"
         }
       }
+    },
+    "ssh": {
+      "enabled": true,
+      "port": 2222,
+      "hostKey": {
+        "privateKeyPath": "./.ssh/host_key",
+        "publicKeyPath": "./.ssh/host_key.pub"
+      },
+      "authorizedKeysPath": "./.ssh/authorized_keys"
     }
   },
   "definitions": {

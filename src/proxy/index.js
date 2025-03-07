@@ -11,6 +11,7 @@ const { PluginLoader } = require('../plugin');
 const chain = require('./chain');
 const { GIT_PROXY_SERVER_PORT: proxyHttpPort } = require('../config/env').Vars;
 const { GIT_PROXY_HTTPS_SERVER_PORT: proxyHttpsPort } = require('../config/env').Vars;
+const SSHServer = require('./ssh/server');
 
 const options = {
   inflate: true,
@@ -37,6 +38,12 @@ const proxyPreparations = async () => {
       await db.addUserCanAuthorise(x.name, 'admin');
     }
   });
+
+  // Initialize SSH server if enabled
+  if (config.getSSHConfig().enabled) {
+    const sshServer = new SSHServer();
+    sshServer.start();
+  }
 };
 
 // just keep this async incase it needs async stuff in the future
