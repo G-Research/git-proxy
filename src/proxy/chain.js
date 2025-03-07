@@ -25,6 +25,7 @@ const executeChain = async (req) => {
   let action;
   try {
     action = await proc.pre.parseAction(req);
+    console.log('Action', action);
     const actions = await getChain(action);
     for (const i in actions) {
       if (!i) continue;

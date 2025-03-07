@@ -6,6 +6,11 @@
   "type": "object",
   "properties": {
     "proxyUrl": { "type": "string" },
+    "gitProtocol": {
+      "type": "string",
+      "enum": ["https", "ssh"],
+      "description": "The protocol to use for Git operations. Can be either 'https' or 'ssh'."
+    },
     "cookieSecret": { "type": "string" },
     "sessionMaxAgeHours": { "type": "number" },
     "api": {
@@ -77,6 +82,14 @@
           "description": "Generic object to configure nodemailer. For full type information, please see https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/nodemailer",
           "type": "object"
         }
+      }
+    },
+    "ssh": {
+      "enabled": true,
+      "port": 2222,
+      "hostKey": {
+        "privateKeyPath": "./.ssh/host_key",
+        "publicKeyPath": "./.ssh/host_key.pub"
       }
     }
   },

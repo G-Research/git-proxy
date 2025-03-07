@@ -25,6 +25,8 @@ let _urlShortener = defaultSettings.urlShortener;
 let _contactEmail = defaultSettings.contactEmail;
 let _csrfProtection = defaultSettings.csrfProtection;
 let _domains = defaultSettings.domains;
+let _sshConfig = defaultSettings.ssh;
+let _gitProtocol = defaultSettings.gitProtocol;
 
 // Get configured proxy URL
 const getProxyUrl = () => {
@@ -168,7 +170,7 @@ const getPlugins = () => {
     _plugins = _userSettings.plugins;
   }
   return _plugins;
-}
+};
 
 const getSSLKeyPath = () => {
   if (_userSettings && _userSettings.sslKeyPemPath) {
@@ -197,6 +199,21 @@ const getDomains = () => {
   return _domains;
 };
 
+const getSSHConfig = () => {
+  if (_userSettings !== null && _userSettings.ssh) {
+    _sshConfig = _userSettings.ssh;
+  }
+  return _sshConfig;
+};
+
+// Get configured git protocol
+const getGitProtocol = () => {
+  if (_userSettings !== null && _userSettings.gitProtocol) {
+    _gitProtocol = _userSettings.gitProtocol;
+  }
+  return _gitProtocol || 'https';
+};
+
 exports.getAPIs = getAPIs;
 exports.getProxyUrl = getProxyUrl;
 exports.getAuthorisedList = getAuthorisedList;
@@ -216,3 +233,5 @@ exports.getPlugins = getPlugins;
 exports.getSSLKeyPath = getSSLKeyPath;
 exports.getSSLCertPath = getSSLCertPath;
 exports.getDomains = getDomains;
+exports.getSSHConfig = getSSHConfig;
+exports.getGitProtocol = getGitProtocol;

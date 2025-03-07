@@ -1,5 +1,6 @@
 {
   "proxyUrl": "https://github.com",
+  "gitProtocol": "https",
   "cookieSecret": "cookie secret",
   "sessionMaxAgeHours": 12,
   "tempPassword": {
@@ -7,6 +8,11 @@
     "emailConfig": {}
   },
   "authorisedList": [
+    {
+      "project": "unlayer",
+      "name": "react-email-editor",
+      "url": "https://github.com/unlayer/react-email-editor.git"
+    },
     {
       "project": "finos",
       "name": "git-proxy",
@@ -96,6 +102,14 @@
   "privateOrganizations": [],
   "urlShortener": "",
   "contactEmail": "",
-  "csrfProtection": true,
-  "plugins": []
+  "csrfProtection": false,
+  "plugins": [],
+  "ssh": {
+    "enabled": true,
+    "port": 2222,
+    "hostKey": {
+      "privateKeyPath": "/Users/dcoric/.ssh/bb_rsa",
+      "publicKeyPath": "/Users/dcoric/.ssh/bb_rsa.pub"
+    }
+  }
 }
