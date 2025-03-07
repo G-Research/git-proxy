@@ -19,30 +19,35 @@ axios.defaults.timeout = 30000;
  * @param {string} password The password to use for the login
  */
 async function login(username, password) {
+  console.log('Login', { username, password, baseUrl });
   try {
-    let response = await axios.post(
-      `${baseUrl}/api/auth/login`,
-      {
-        username,
-        password,
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        withCredentials: true,
-      },
-    );
-    const cookies = response.headers['set-cookie'];
+    axios
+      .post(
+        `${baseUrl}/api/auth/login`,
+        {
+          username,
+          password,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          withCredentials: true,
+        },
+      )
+      .then(async (response) => {
+        const cookies = response.headers['set-cookie'];
 
-    response = await axios.get(`${baseUrl}/api/auth/profile`, {
-      headers: { Cookie: cookies },
-      withCredentials: true,
-    });
+        response = await axios.get(`${baseUrl}/api/auth/profile`, {
+          headers: { Cookie: cookies },
+          withCredentials: true,
+        });
 
-    fs.writeFileSync(GIT_PROXY_COOKIE_FILE, JSON.stringify(cookies), 'utf8');
+        fs.writeFileSync(GIT_PROXY_COOKIE_FILE, JSON.stringify(cookies), 'utf8');
 
-    const user = `"${response.data.username}" <${response.data.email}>`;
-    const isAdmin = response.data.admin ? ' (admin)' : '';
-    console.log(`Login ${user}${isAdmin}: OK`);
+        const user = `"${response.data.username}" <${response.data.email}>`;
+        const isAdmin = response.data.admin ? ' (admin)' : '';
+        console.log(`Login ${user}${isAdmin}: OK`);
+      })
+      .catch((loginError) => console.error);
   } catch (error) {
     if (error.response) {
       console.error(`Error: Login '${username}': '${error.response.status}'`);
@@ -306,6 +311,60 @@ async function logout() {
   console.log('Logout: OK');
 }
 
+/**
+ * Add SSH key for a user
+ * @param {string} username The username to add the key for
+ * @param {string} keyPath Path to the public key file
+ */
+async function addSSHKey(username, keyPath) {
+  console.log('Add SSH key', { username, keyPath });
+  if (!fs.existsSync(GIT_PROXY_COOKIE_FILE)) {
+    console.error('Error: SSH key: Authentication required');
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    const cookies = JSON.parse(fs.readFileSync(GIT_PROXY_COOKIE_FILE, 'utf8'));
+    const publicKey = fs.readFileSync(keyPath, 'utf8').trim();
+
+    console.log('Adding SSH key', { username, publicKey });
+    await axios.post(
+      `${baseUrl}/api/v1/user/${username}/ssh-keys`,
+      { publicKey },
+      {
+        headers: {
+          Cookie: cookies,
+          'Content-Type': 'application/json',
+        },
+        withCredentials: true,
+      },
+    );
+
+    console.log(`SSH key added successfully for user ${username}`);
+  } catch (error) {
+    let errorMessage = `Error: SSH key: '${error.message}'`;
+    process.exitCode = 2;
+
+    if (error.response) {
+      switch (error.response.status) {
+        case 401:
+          errorMessage = 'Error: SSH key: Authentication required';
+          process.exitCode = 3;
+          break;
+        case 404:
+          errorMessage = `Error: SSH key: User '${username}' not found`;
+          process.exitCode = 4;
+          break;
+      }
+    } else if (error.code === 'ENOENT') {
+      errorMessage = `Error: SSH key: Could not find key file at ${keyPath}`;
+      process.exitCode = 5;
+    }
+    console.error(errorMessage);
+  }
+}
+
 // Parsing command line arguments
 yargs(hideBin(process.argv))
   .command({
@@ -434,6 +493,37 @@ yargs(hideBin(process.argv))
     },
     handler(argv) {
       rejectGitPush(argv.id);
+    },
+  })
+  .command({
+    command: 'ssh-key',
+    describe: 'Manage SSH keys',
+    builder: {
+      action: {
+        describe: 'Action to perform (add/remove)',
+        demandOption: true,
+        type: 'string',
+        choices: ['add', 'remove'],
+      },
+      username: {
+        describe: 'Username to manage keys for',
+        demandOption: true,
+        type: 'string',
+      },
+      keyPath: {
+        describe: 'Path to the public key file',
+        demandOption: true,
+        type: 'string',
+      },
+    },
+    handler(argv) {
+      if (argv.action === 'add') {
+        addSSHKey(argv.username, argv.keyPath);
+      } else if (argv.action === 'remove') {
+        // TODO: Implement remove SSH key
+        console.error('Error: SSH key: Remove action not implemented yet');
+        process.exitCode = 1;
+      }
     },
   })
   .demandCommand(1, 'You need at least one command before moving on')

@@ -83,3 +83,6 @@ module.exports.canUserApproveRejectPushRepo = sink.canUserApproveRejectPushRepo;
 module.exports.canUserApproveRejectPush = sink.canUserApproveRejectPush;
 module.exports.canUserCancelPush = sink.canUserCancelPush;
 module.exports.getSessionStore = sink.getSessionStore;
+module.exports.addPublicKey = sink.addPublicKey;
+module.exports.removePublicKey = sink.removePublicKey;
+module.exports.findUserBySSHKey = sink.findUserBySSHKey;
