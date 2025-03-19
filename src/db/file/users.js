@@ -39,6 +39,9 @@ exports.findUserByOIDC = function (oidcId) {
 };
 
 exports.createUser = function (data) {
+  if (!data.publicKeys) {
+    data.publicKeys = [];
+  }
   return new Promise((resolve, reject) => {
     db.insert(data, (err) => {
       if (err) {
@@ -63,6 +66,9 @@ exports.deleteUser = function (username) {
 };
 
 exports.updateUser = function (user) {
+  if (!user.publicKeys) {
+    user.publicKeys = [];
+  }
   return new Promise((resolve, reject) => {
     const options = { multi: false, upsert: false };
     db.update({ username: user.username }, user, options, (err) => {
@@ -83,6 +89,66 @@ exports.getUsers = function (query) {
         reject(err);
       } else {
         resolve(docs);
+      }
+    });
+  });
+};
+
+exports.addPublicKey = function (username, publicKey) {
+  return new Promise((resolve, reject) => {
+    exports
+      .findUser(username)
+      .then((user) => {
+        if (!user) {
+          reject(new Error('User not found'));
+          return;
+        }
+        if (!user.publicKeys) {
+          user.publicKeys = [];
+        }
+        if (!user.publicKeys.includes(publicKey)) {
+          user.publicKeys.push(publicKey);
+          exports.updateUser(user).then(resolve).catch(reject);
+        } else {
+          resolve();
+        }
+      })
+      .catch(reject);
+  });
+};
+
+exports.removePublicKey = function (username, publicKey) {
+  return new Promise((resolve, reject) => {
+    exports
+      .findUser(username)
+      .then((user) => {
+        if (!user) {
+          reject(new Error('User not found'));
+          return;
+        }
+        if (!user.publicKeys) {
+          user.publicKeys = [];
+          resolve();
+          return;
+        }
+        user.publicKeys = user.publicKeys.filter((key) => key !== publicKey);
+        exports.updateUser(user).then(resolve).catch(reject);
+      })
+      .catch(reject);
+  });
+};
+
+exports.findUserBySSHKey = function (sshKey) {
+  return new Promise((resolve, reject) => {
+    db.findOne({ publicKeys: sshKey }, (err, doc) => {
+      if (err) {
+        reject(err);
+      } else {
+        if (!doc) {
+          resolve(null);
+        } else {
+          resolve(doc);
+        }
       }
     });
   });
