@@ -37,6 +37,10 @@ const getProxyUrl = () => {
   return _proxyUrl;
 };
 
+const getSSHProxyUrl = () => {
+  return getProxyUrl().replace('https://', 'git@');
+};
+
 // Gets a list of authorised repositories
 const getAuthorisedList = () => {
   if (_userSettings !== null && _userSettings.authorisedList) {
@@ -216,6 +220,7 @@ const getGitProtocol = () => {
 
 exports.getAPIs = getAPIs;
 exports.getProxyUrl = getProxyUrl;
+exports.getSSHProxyUrl = getSSHProxyUrl;
 exports.getAuthorisedList = getAuthorisedList;
 exports.getDatabase = getDatabase;
 exports.logConfiguration = logConfiguration;

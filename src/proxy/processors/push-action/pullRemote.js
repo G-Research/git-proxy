@@ -27,7 +27,7 @@ const exec = async (req, action) => {
 
     if (gitProtocol === 'ssh') {
       // Convert HTTPS URL to SSH URL
-      cloneUrl = action.url.replace('https://github.com/', 'git@github.com:');
+      cloneUrl = action.url.replace('https://', 'git@');
       const cmd = `git clone ${cloneUrl}`;
       step.log(`Executing ${cmd}`);
 
