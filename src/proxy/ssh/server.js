@@ -9,6 +9,10 @@ class SSHServer {
       {
         hostKeys: [require('fs').readFileSync(config.getSSHConfig().hostKey.privateKeyPath)],
         authMethods: ['publickey', 'password'],
+        // Add connection timeout and keepalive settings
+        keepaliveInterval: 10000,
+        keepaliveCountMax: 3,
+        readyTimeout: 10000,
         // debug: (msg) => {
         // console.debug('[SSH Debug]', msg);
         // },
@@ -18,7 +22,24 @@ class SSHServer {
   }
 
   async handleClient(client) {
-    console.log('[SSH] Client connected', client);
+    console.log('[SSH] Client connected');
+
+    // Set up client error handling
+    client.on('error', (err) => {
+      console.error('[SSH] Client error:', err);
+      // Don't end the connection on error, let it try to recover
+    });
+
+    // Handle client end
+    client.on('end', () => {
+      console.log('[SSH] Client disconnected');
+    });
+
+    // Handle client close
+    client.on('close', () => {
+      console.log('[SSH] Client connection closed');
+    });
+
     client.on('authentication', async (ctx) => {
       console.log(`[SSH] Authentication attempt: ${ctx.method}`);
 
@@ -89,10 +110,6 @@ class SSHServer {
       console.log(`[SSH] Client ready: ${client.username}`);
       client.on('session', this.handleSession.bind(this));
     });
-
-    client.on('error', (err) => {
-      console.error('[SSH] Client error:', err);
-    });
   }
 
   async handleSession(accept, reject) {
@@ -144,6 +161,36 @@ class SSHServer {
           const githubSsh = new ssh2.Client();
 
           console.log('[SSH] Creating SSH connection to GitHub');
+
+          // Add connection options
+          const connectionOptions = {
+            host: 'github.com',
+            port: 22,
+            username: 'git',
+            keepaliveInterval: 10000, // Send keepalive every 10 seconds
+            keepaliveCountMax: 3, // Allow 3 missed keepalives before disconnecting
+            readyTimeout: 10000, // Connection timeout after 10 seconds
+            tryKeyboard: false, // Disable keyboard-interactive auth
+            debug: (msg) => {
+              console.debug('[GitHub SSH Debug]', msg);
+            },
+          };
+
+          // Get the client's SSH key that was used for authentication
+          const clientKey = session._channel._client.userPrivateKeyz;
+          console.log('[SSH] Client key:', clientKey ? 'Available' : 'Not available');
+
+          // Add the private key based on what's available
+          if (clientKey) {
+            console.log('[SSH] Using client key to connect to GitHub');
+            connectionOptions.privateKey = clientKey;
+          } else {
+            console.log('[SSH] No client key available, using proxy key');
+            connectionOptions.privateKey = require('fs').readFileSync(
+              config.getSSHConfig().hostKey.privateKeyPath,
+            );
+          }
+
           githubSsh.on('ready', () => {
             console.log('[SSH] Connected to GitHub');
 
@@ -155,6 +202,19 @@ class SSHServer {
                 stream.end();
                 return;
               }
+
+              // Handle stream errors
+              githubStream.on('error', (err) => {
+                console.error('[SSH] GitHub stream error:', err);
+                stream.write(err.toString());
+                stream.end();
+              });
+
+              // Handle stream close
+              githubStream.on('close', () => {
+                console.log('[SSH] GitHub stream closed');
+                githubSsh.end();
+              });
 
               // Pipe data between client and GitHub
               stream.pipe(githubStream).pipe(stream);
@@ -172,30 +232,8 @@ class SSHServer {
             stream.end();
           });
 
-          // Get the client's SSH key that was used for authentication
-          // console.log('[SSH] Session:', session);
-          const clientKey = session._channel._client.userPrivateKey;
-          console.log('[SSH] Client key:', clientKey ? 'Available' : 'Not available');
-
-          if (clientKey) {
-            console.log('[SSH] Using client key to connect to GitHub');
-            // Use the client's private key to connect to GitHub
-            githubSsh.connect({
-              host: 'github.com',
-              port: 22,
-              username: 'git',
-              privateKey: clientKey,
-            });
-          } else {
-            console.log('[SSH] No client key available, using proxy key');
-            // Fallback to proxy's SSH key if no client key is available
-            githubSsh.connect({
-              host: 'github.com',
-              port: 22,
-              username: 'git',
-              privateKey: require('fs').readFileSync(config.getSSHConfig().hostKey.privateKeyPath),
-            });
-          }
+          // Connect to GitHub
+          githubSsh.connect(connectionOptions);
         } catch (error) {
           console.error('[SSH] Error during SSH connection:', error);
           stream.write(error.toString());
