@@ -45,6 +45,14 @@ const validGitRequest = (url, headers) => {
   return false;
 };
 
+// Add function to convert SSH URL to HTTPS
+const convertSshToHttps = (url) => {
+  if (url.startsWith('git@github.com:')) {
+    return url.replace('git@github.com:', 'https://github.com/');
+  }
+  return url;
+};
+
 router.use(
   '/',
   proxy(config.getProxyUrl(), {
@@ -102,7 +110,7 @@ router.use(
       }
     },
     proxyReqPathResolver: (req) => {
-      const url = config.getProxyUrl() + req.originalUrl;
+      const url = convertSshToHttps(config.getProxyUrl()) + req.originalUrl;
       console.log('Sending request to ' + url);
       return url;
     },
