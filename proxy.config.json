@@ -108,8 +108,8 @@
     "enabled": true,
     "port": 2222,
     "hostKey": {
-      "privateKeyPath": "/Users/dcoric/.ssh/bb_rsa",
-      "publicKeyPath": "/Users/dcoric/.ssh/bb_rsa.pub"
+      "privateKeyPath": "/Users/dcoric/.ssh/id_rsa",
+      "publicKeyPath": "/Users/dcoric/.ssh/id_rsa.pub"
     }
   }
 }

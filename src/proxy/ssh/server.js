@@ -158,13 +158,13 @@ class SSHServer {
           }
 
           // Create SSH connection to GitHub
-          const githubSsh = new ssh2.Client();
+          const remoteGitSsh = new ssh2.Client();
 
           console.log('[SSH] Creating SSH connection to GitHub');
 
           // Add connection options
           const connectionOptions = {
-            host: 'github.com',
+            host: config.getProxyUrl().replace('https://', ''),
             port: 22,
             username: 'git',
             keepaliveInterval: 10000, // Send keepalive every 10 seconds
@@ -175,6 +175,8 @@ class SSHServer {
               console.debug('[GitHub SSH Debug]', msg);
             },
           };
+
+          console.log('[SSH] Connection options', connectionOptions);
 
           // Get the client's SSH key that was used for authentication
           const clientKey = session._channel._client.userPrivateKeyz;
@@ -191,49 +193,54 @@ class SSHServer {
             );
           }
 
-          githubSsh.on('ready', () => {
+          remoteGitSsh.on('ready', () => {
             console.log('[SSH] Connected to GitHub');
 
             // Execute the Git command on GitHub
-            githubSsh.exec(command, { env: { GIT_PROTOCOL: 'version=2' } }, (err, githubStream) => {
-              if (err) {
-                console.error('[SSH] Failed to execute command on GitHub:', err);
-                stream.write(err.toString());
-                stream.end();
-                return;
-              }
+            remoteGitSsh.exec(
+              command,
+              { env: { GIT_PROTOCOL: 'version=2' } },
+              (err, githubStream) => {
+                if (err) {
+                  console.error('[SSH] Failed to execute command on GitHub:', err);
+                  stream.write(err.toString());
+                  stream.end();
+                  return;
+                }
 
-              // Handle stream errors
-              githubStream.on('error', (err) => {
-                console.error('[SSH] GitHub stream error:', err);
-                stream.write(err.toString());
-                stream.end();
-              });
+                // Handle stream errors
+                githubStream.on('error', (err) => {
+                  console.error('[SSH] GitHub stream error:', err);
+                  stream.write(err.toString());
+                  stream.end();
+                });
 
-              // Handle stream close
-              githubStream.on('close', () => {
-                console.log('[SSH] GitHub stream closed');
-                githubSsh.end();
-              });
+                // Handle stream close
+                githubStream.on('close', () => {
+                  console.log('[SSH] GitHub stream closed');
+                  stream.pipe(githubStream).pipe(stream);
+                  remoteGitSsh.end();
+                });
 
-              // Pipe data between client and GitHub
-              stream.pipe(githubStream).pipe(stream);
+                // Pipe data between client and GitHub
+                stream.pipe(githubStream).pipe(stream);
 
-              githubStream.on('exit', (code) => {
-                console.log(`[SSH] GitHub command exited with code ${code}`);
-                githubSsh.end();
-              });
-            });
+                githubStream.on('exit', (code) => {
+                  console.log(`[SSH] GitHub command exited with code ${code}`);
+                  remoteGitSsh.end();
+                });
+              },
+            );
           });
 
-          githubSsh.on('error', (err) => {
+          remoteGitSsh.on('error', (err) => {
             console.error('[SSH] GitHub SSH error:', err);
             stream.write(err.toString());
             stream.end();
           });
 
           // Connect to GitHub
-          githubSsh.connect(connectionOptions);
+          remoteGitSsh.connect(connectionOptions);
         } catch (error) {
           console.error('[SSH] Error during SSH connection:', error);
           stream.write(error.toString());
