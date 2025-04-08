@@ -267,3 +267,5 @@ website/.docusaurus
 
 # IDE files
 .idea
+
+.temp

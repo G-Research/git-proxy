@@ -66,7 +66,17 @@ class SSHServer {
           console.log(`[SSH] Public key authentication successful for user ${user.username}`);
           client.username = user.username;
           // Store the user's private key for later use with GitHub
-          client.userPrivateKey = ctx.key;
+          client.userPrivateKey = {
+            algo: ctx.key.algo,
+            data: ctx.key.data,
+            comment: ctx.key.comment || '',
+          };
+          console.log(
+            `[SSH] Stored key info - Algorithm: ${ctx.key.algo}, Data length: ${ctx.key.data.length}, Data type: ${typeof ctx.key.data}`,
+          );
+          if (Buffer.isBuffer(ctx.key.data)) {
+            console.log('[SSH] Key data is a Buffer');
+          }
           ctx.accept();
         } catch (error) {
           console.error('[SSH] Error during public key authentication:', error);
@@ -157,35 +167,62 @@ class SSHServer {
             return;
           }
 
-          // Create SSH connection to GitHub
-          const remoteGitSsh = new ssh2.Client();
+          // Create SSH connection to GitHub using the Client approach
+          const { Client } = require('ssh2');
+          const remoteGitSsh = new Client();
 
-          console.log('[SSH] Creating SSH connection to GitHub');
+          console.log('[SSH] Creating SSH connection to remote');
 
-          // Add connection options
+          // Get remote host from config
+          const remoteUrl = new URL(config.getProxyUrl());
+
+          // Set up connection options
           const connectionOptions = {
-            host: config.getProxyUrl().replace('https://', ''),
+            host: remoteUrl.hostname,
             port: 22,
             username: 'git',
-            keepaliveInterval: 10000, // Send keepalive every 10 seconds
-            keepaliveCountMax: 3, // Allow 3 missed keepalives before disconnecting
-            readyTimeout: 10000, // Connection timeout after 10 seconds
-            tryKeyboard: false, // Disable keyboard-interactive auth
-            debug: (msg) => {
-              console.debug('[GitHub SSH Debug]', msg);
-            },
+            keepaliveInterval: 10000,
+            keepaliveCountMax: 3,
+            readyTimeout: 10000,
+            tryKeyboard: false,
+            // debug: (msg) => {
+            //   console.debug('[GitHub SSH Debug]', msg);
+            // },
           };
 
-          console.log('[SSH] Connection options', connectionOptions);
-
           // Get the client's SSH key that was used for authentication
-          const clientKey = session._channel._client.userPrivateKeyz;
+          const clientKey = session._channel._client.userPrivateKey;
           console.log('[SSH] Client key:', clientKey ? 'Available' : 'Not available');
 
           // Add the private key based on what's available
           if (clientKey) {
-            console.log('[SSH] Using client key to connect to GitHub');
-            connectionOptions.privateKey = clientKey;
+            console.log('[SSH] Using client key to connect to remote' + JSON.stringify(clientKey));
+            // Check if the key is in the correct format
+            if (typeof clientKey === 'object' && clientKey.algo && clientKey.data) {
+              // We need to use the private key, not the public key data
+              // Since we only have the public key from authentication, we'll use the proxy key
+              console.log('[SSH] Only have public key data, using proxy key instead');
+              connectionOptions.privateKey = require('fs').readFileSync(
+                config.getSSHConfig().hostKey.privateKeyPath,
+              );
+            } else if (Buffer.isBuffer(clientKey)) {
+              // The key is a buffer, use it directly
+              connectionOptions.privateKey = clientKey;
+              console.log('[SSH] Using client key buffer directly');
+            } else {
+              // Try to convert the key to a buffer if it's a string
+              try {
+                connectionOptions.privateKey = Buffer.from(clientKey);
+                console.log('[SSH] Converted client key to buffer');
+              } catch (error) {
+                console.error('[SSH] Failed to convert client key to buffer:', error);
+                // Fall back to the proxy key
+                connectionOptions.privateKey = require('fs').readFileSync(
+                  config.getSSHConfig().hostKey.privateKeyPath,
+                );
+                console.log('[SSH] Falling back to proxy key');
+              }
+            }
           } else {
             console.log('[SSH] No client key available, using proxy key');
             connectionOptions.privateKey = require('fs').readFileSync(
@@ -193,40 +230,56 @@ class SSHServer {
             );
           }
 
-          remoteGitSsh.on('ready', () => {
-            console.log('[SSH] Connected to GitHub');
+          // Log the key type for debugging
+          if (connectionOptions.privateKey) {
+            if (
+              typeof connectionOptions.privateKey === 'object' &&
+              connectionOptions.privateKey.algo
+            ) {
+              console.log(`[SSH] Key algo: ${connectionOptions.privateKey.algo}`);
+            } else if (Buffer.isBuffer(connectionOptions.privateKey)) {
+              console.log(
+                `[SSH] Key is a buffer of length: ${connectionOptions.privateKey.length}`,
+              );
+            } else {
+              console.log(`[SSH] Key is of type: ${typeof connectionOptions.privateKey}`);
+            }
+          }
 
-            // Execute the Git command on GitHub
+          // Set up event handlers
+          remoteGitSsh.on('ready', () => {
+            console.log('[SSH] Connected to remote');
+
+            // Execute the Git command on remote
             remoteGitSsh.exec(
               command,
               { env: { GIT_PROTOCOL: 'version=2' } },
-              (err, githubStream) => {
+              (err, remoteStream) => {
                 if (err) {
-                  console.error('[SSH] Failed to execute command on GitHub:', err);
+                  console.error('[SSH] Failed to execute command on remote:', err);
                   stream.write(err.toString());
                   stream.end();
                   return;
                 }
 
                 // Handle stream errors
-                githubStream.on('error', (err) => {
-                  console.error('[SSH] GitHub stream error:', err);
+                remoteStream.on('error', (err) => {
+                  console.error('[SSH] Remote stream error:', err);
                   stream.write(err.toString());
                   stream.end();
                 });
 
                 // Handle stream close
-                githubStream.on('close', () => {
-                  console.log('[SSH] GitHub stream closed');
-                  stream.pipe(githubStream).pipe(stream);
+                remoteStream.on('close', () => {
+                  console.log('[SSH] Remote stream closed');
                   remoteGitSsh.end();
                 });
 
-                // Pipe data between client and GitHub
-                stream.pipe(githubStream).pipe(stream);
+                // Pipe data between client and remote
+                stream.pipe(remoteStream).pipe(stream);
 
-                githubStream.on('exit', (code) => {
-                  console.log(`[SSH] GitHub command exited with code ${code}`);
+                remoteStream.on('exit', (code) => {
+                  console.log(`[SSH] Remote command exited with code ${code}`);
                   remoteGitSsh.end();
                 });
               },
@@ -234,12 +287,95 @@ class SSHServer {
           });
 
           remoteGitSsh.on('error', (err) => {
-            console.error('[SSH] GitHub SSH error:', err);
-            stream.write(err.toString());
-            stream.end();
+            console.error('[SSH] Remote SSH error:', err);
+
+            // If authentication failed and we're using the client key, try with the proxy key
+            if (
+              err.message.includes('All configured authentication methods failed') &&
+              clientKey &&
+              connectionOptions.privateKey !==
+                require('fs').readFileSync(config.getSSHConfig().hostKey.privateKeyPath)
+            ) {
+              console.log('[SSH] Authentication failed with client key, trying with proxy key');
+
+              // Create a new connection with the proxy key
+              const proxyGitSsh = new Client();
+
+              // Set up connection options with proxy key
+              const proxyConnectionOptions = {
+                ...connectionOptions,
+                privateKey: require('fs').readFileSync(
+                  config.getSSHConfig().hostKey.privateKeyPath,
+                ),
+              };
+
+              // Set up event handlers for the proxy connection
+              proxyGitSsh.on('ready', () => {
+                console.log('[SSH] Connected to remote with proxy key');
+
+                // Execute the Git command on remote
+                proxyGitSsh.exec(
+                  command,
+                  { env: { GIT_PROTOCOL: 'version=2' } },
+                  (err, remoteStream) => {
+                    if (err) {
+                      console.error(
+                        '[SSH] Failed to execute command on remote with proxy key:',
+                        err,
+                      );
+                      stream.write(err.toString());
+                      stream.end();
+                      return;
+                    }
+
+                    // Handle stream errors
+                    remoteStream.on('error', (err) => {
+                      console.error('[SSH] Remote stream error with proxy key:', err);
+                      stream.write(err.toString());
+                      stream.end();
+                    });
+
+                    // Handle stream close
+                    remoteStream.on('close', () => {
+                      console.log('[SSH] Remote stream closed with proxy key');
+                      proxyGitSsh.end();
+                    });
+
+                    // Pipe data between client and remote
+                    stream.pipe(remoteStream).pipe(stream);
+
+                    remoteStream.on('exit', (code) => {
+                      console.log(`[SSH] Remote command exited with code ${code} using proxy key`);
+                      proxyGitSsh.end();
+                    });
+                  },
+                );
+              });
+
+              proxyGitSsh.on('error', (err) => {
+                console.error('[SSH] Remote SSH error with proxy key:', err);
+                stream.write(err.toString());
+                stream.end();
+              });
+
+              // Connect to remote with proxy key
+              proxyGitSsh.connect(proxyConnectionOptions);
+            } else {
+              // If we're already using the proxy key or it's a different error, just end the stream
+              stream.write(err.toString());
+              stream.end();
+            }
           });
 
-          // Connect to GitHub
+          // Connect to remote
+          console.log('[SSH] Attempting connection with options:', {
+            host: connectionOptions.host,
+            port: connectionOptions.port,
+            username: connectionOptions.username,
+            algorithms: connectionOptions.algorithms,
+            privateKeyType: typeof connectionOptions.privateKey,
+            privateKeyIsBuffer: Buffer.isBuffer(connectionOptions.privateKey),
+          });
           remoteGitSsh.connect(connectionOptions);
         } catch (error) {
           console.error('[SSH] Error during SSH connection:', error);
