@@ -9,10 +9,10 @@ class SSHServer {
       {
         hostKeys: [require('fs').readFileSync(config.getSSHConfig().hostKey.privateKeyPath)],
         authMethods: ['publickey', 'password'],
-        // Add connection timeout and keepalive settings
-        keepaliveInterval: 10000,
-        keepaliveCountMax: 3,
-        readyTimeout: 10000,
+        // Increase connection timeout and keepalive settings
+        keepaliveInterval: 5000, // More frequent keepalive
+        keepaliveCountMax: 10, // Allow more keepalive attempts
+        readyTimeout: 30000, // Longer ready timeout
         debug: (msg) => {
           console.debug('[SSH Debug]', msg);
         },
@@ -62,13 +62,18 @@ class SSHServer {
       keepaliveTimer = setInterval(() => {
         if (client.connected) {
           console.log('[SSH] Sending keepalive');
-          client.ping();
+          try {
+            client.ping();
+          } catch (error) {
+            console.error('[SSH] Error sending keepalive:', error);
+            // Don't clear the timer on error, let it try again
+          }
         } else {
           console.log('[SSH] Client disconnected, clearing keepalive');
           clearInterval(keepaliveTimer);
           keepaliveTimer = null;
         }
-      }, 10000);
+      }, 5000); // More frequent keepalive
     };
 
     // Start keepalive when client is ready
@@ -227,14 +232,17 @@ class SSHServer {
             host: remoteUrl.hostname,
             port: 22,
             username: 'git',
-            readyTimeout: 10000,
+            readyTimeout: 30000,
             tryKeyboard: false,
             debug: (msg) => {
               console.debug('[GitHub SSH Debug]', msg);
             },
-            // Disable keepalive for remote connection since we're handling it at the proxy level
-            keepaliveInterval: 0,
-            keepaliveCountMax: 0,
+            // Increase keepalive settings for remote connection
+            keepaliveInterval: 5000,
+            keepaliveCountMax: 10,
+            // Increase buffer sizes for large transfers
+            windowSize: 1024 * 1024, // 1MB window size
+            packetSize: 32768, // 32KB packet size
           };
 
           // Get the client's SSH key that was used for authentication
@@ -317,6 +325,22 @@ class SSHServer {
                 // Handle stream errors
                 remoteStream.on('error', (err) => {
                   console.error('[SSH] Remote stream error:', err);
+                  // Don't immediately end the stream on error, try to recover
+                  if (
+                    err.message.includes('early EOF') ||
+                    err.message.includes('unexpected disconnect')
+                  ) {
+                    console.log(
+                      '[SSH] Detected early EOF or unexpected disconnect, attempting to recover',
+                    );
+                    // Try to keep the connection alive
+                    if (remoteGitSsh.connected) {
+                      console.log('[SSH] Connection still active, continuing');
+                      // Don't end the stream, let it try to recover
+                      return;
+                    }
+                  }
+                  // If we can't recover, then end the stream
                   stream.write(err.toString());
                   stream.end();
                 });
@@ -324,18 +348,36 @@ class SSHServer {
                 // Pipe data between client and remote
                 stream.on('data', (data) => {
                   console.debug('[SSH] Client -> Remote:', data.toString().slice(0, 100));
-                  remoteStream.write(data);
+                  try {
+                    remoteStream.write(data);
+                  } catch (error) {
+                    console.error('[SSH] Error writing to remote stream:', error);
+                    // Don't end the stream on error, let it try to recover
+                  }
                 });
 
                 remoteStream.on('data', (data) => {
                   console.debug('[SSH] Remote -> Client:', data.toString().slice(0, 100));
-                  stream.write(data);
+                  try {
+                    stream.write(data);
+                  } catch (error) {
+                    console.error('[SSH] Error writing to client stream:', error);
+                    // Don't end the stream on error, let it try to recover
+                  }
                 });
 
                 // Handle stream close
                 remoteStream.on('close', () => {
                   console.log('[SSH] Remote stream closed');
                   // Don't end the client stream immediately, let Git protocol complete
+                  // Check if we're in the middle of a large transfer
+                  if (stream.readable && !stream.destroyed) {
+                    console.log('[SSH] Stream still readable, not ending client stream');
+                    // Let the client end the stream when it's done
+                  } else {
+                    console.log('[SSH] Stream not readable or destroyed, ending client stream');
+                    stream.end();
+                  }
                 });
 
                 remoteStream.on('exit', (code) => {
@@ -353,19 +395,29 @@ class SSHServer {
                   setTimeout(() => {
                     console.log('[SSH] Ending SSH connection after client stream end');
                     remoteGitSsh.end();
-                  }, 500);
+                  }, 1000); // Increased delay to ensure all data is processed
                 });
 
                 // Handle client stream error
                 stream.on('error', (err) => {
                   console.error('[SSH] Client stream error:', err);
+                  // Don't immediately end the connection on error, try to recover
+                  if (
+                    err.message.includes('early EOF') ||
+                    err.message.includes('unexpected disconnect')
+                  ) {
+                    console.log(
+                      '[SSH] Detected early EOF or unexpected disconnect on client side, attempting to recover',
+                    );
+                    // Try to keep the connection alive
+                    if (remoteGitSsh.connected) {
+                      console.log('[SSH] Connection still active, continuing');
+                      // Don't end the connection, let it try to recover
+                      return;
+                    }
+                  }
+                  // If we can't recover, then end the connection
                   remoteGitSsh.end();
-                });
-
-                // Handle remote stream error
-                remoteStream.on('error', (err) => {
-                  console.error('[SSH] Remote stream error:', err);
-                  // Don't end the client stream immediately, let Git protocol complete
                 });
 
                 // Handle connection end
@@ -382,7 +434,7 @@ class SSHServer {
                 const connectionTimeout = setTimeout(() => {
                   console.log('[SSH] Connection timeout, ending connection');
                   remoteGitSsh.end();
-                }, 30000); // 30 seconds timeout
+                }, 300000); // 5 minutes timeout for large repositories
 
                 // Clear the timeout when the connection is closed
                 remoteGitSsh.on('close', () => {
@@ -413,6 +465,11 @@ class SSHServer {
                 privateKey: require('fs').readFileSync(
                   config.getSSHConfig().hostKey.privateKeyPath,
                 ),
+                // Ensure these settings are explicitly set for the proxy connection
+                windowSize: 1024 * 1024, // 1MB window size
+                packetSize: 32768, // 32KB packet size
+                keepaliveInterval: 5000,
+                keepaliveCountMax: 10,
               };
 
               // Set up event handlers for the proxy connection
@@ -437,6 +494,22 @@ class SSHServer {
                     // Handle stream errors
                     remoteStream.on('error', (err) => {
                       console.error('[SSH] Remote stream error with proxy key:', err);
+                      // Don't immediately end the stream on error, try to recover
+                      if (
+                        err.message.includes('early EOF') ||
+                        err.message.includes('unexpected disconnect')
+                      ) {
+                        console.log(
+                          '[SSH] Detected early EOF or unexpected disconnect with proxy key, attempting to recover',
+                        );
+                        // Try to keep the connection alive
+                        if (proxyGitSsh.connected) {
+                          console.log('[SSH] Connection still active with proxy key, continuing');
+                          // Don't end the stream, let it try to recover
+                          return;
+                        }
+                      }
+                      // If we can't recover, then end the stream
                       stream.write(err.toString());
                       stream.end();
                     });
@@ -444,18 +517,46 @@ class SSHServer {
                     // Pipe data between client and remote
                     stream.on('data', (data) => {
                       console.debug('[SSH] Client -> Remote:', data.toString().slice(0, 100));
-                      remoteStream.write(data);
+                      try {
+                        remoteStream.write(data);
+                      } catch (error) {
+                        console.error(
+                          '[SSH] Error writing to remote stream with proxy key:',
+                          error,
+                        );
+                        // Don't end the stream on error, let it try to recover
+                      }
                     });
 
                     remoteStream.on('data', (data) => {
-                      console.debug('[SSH] Remote -> Client:', data.toString().slice(0, 100));
-                      stream.write(data);
+                      console.debug('[SSH] Remote -> Client:', data.toString().slice(0, 20));
+                      try {
+                        stream.write(data);
+                      } catch (error) {
+                        console.error(
+                          '[SSH] Error writing to client stream with proxy key:',
+                          error,
+                        );
+                        // Don't end the stream on error, let it try to recover
+                      }
                     });
 
                     // Handle stream close
                     remoteStream.on('close', () => {
                       console.log('[SSH] Remote stream closed with proxy key');
                       // Don't end the client stream immediately, let Git protocol complete
+                      // Check if we're in the middle of a large transfer
+                      if (stream.readable && !stream.destroyed) {
+                        console.log(
+                          '[SSH] Stream still readable with proxy key, not ending client stream',
+                        );
+                        // Let the client end the stream when it's done
+                      } else {
+                        console.log(
+                          '[SSH] Stream not readable or destroyed with proxy key, ending client stream',
+                        );
+                        stream.end();
+                      }
                     });
 
                     remoteStream.on('exit', (code) => {
@@ -472,12 +573,28 @@ class SSHServer {
                           '[SSH] Ending SSH connection after client stream end with proxy key',
                         );
                         proxyGitSsh.end();
-                      }, 500);
+                      }, 1000); // Increased delay to ensure all data is processed
                     });
 
                     // Handle client stream error
                     stream.on('error', (err) => {
                       console.error('[SSH] Client stream error with proxy key:', err);
+                      // Don't immediately end the connection on error, try to recover
+                      if (
+                        err.message.includes('early EOF') ||
+                        err.message.includes('unexpected disconnect')
+                      ) {
+                        console.log(
+                          '[SSH] Detected early EOF or unexpected disconnect on client side with proxy key, attempting to recover',
+                        );
+                        // Try to keep the connection alive
+                        if (proxyGitSsh.connected) {
+                          console.log('[SSH] Connection still active with proxy key, continuing');
+                          // Don't end the connection, let it try to recover
+                          return;
+                        }
+                      }
+                      // If we can't recover, then end the connection
                       proxyGitSsh.end();
                     });
 
@@ -501,7 +618,7 @@ class SSHServer {
                     const proxyConnectionTimeout = setTimeout(() => {
                       console.log('[SSH] Connection timeout with proxy key, ending connection');
                       proxyGitSsh.end();
-                    }, 30000); // 30 seconds timeout
+                    }, 300000); // 5 minutes timeout for large repositories
 
                     // Clear the timeout when the connection is closed
                     proxyGitSsh.on('close', () => {
