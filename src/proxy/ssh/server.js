@@ -13,9 +13,9 @@ class SSHServer {
         keepaliveInterval: 10000,
         keepaliveCountMax: 3,
         readyTimeout: 10000,
-        // debug: (msg) => {
-        // console.debug('[SSH Debug]', msg);
-        // },
+        debug: (msg) => {
+          console.debug('[SSH Debug]', msg);
+        },
       },
       this.handleClient.bind(this),
     );
@@ -38,6 +38,52 @@ class SSHServer {
     // Handle client close
     client.on('close', () => {
       console.log('[SSH] Client connection closed');
+    });
+
+    // Handle keepalive requests
+    client.on('global request', (accept, reject, info) => {
+      console.log('[SSH] Global request:', info);
+      if (info.type === 'keepalive@openssh.com') {
+        console.log('[SSH] Accepting keepalive request');
+        // Always accept keepalive requests to prevent connection drops
+        accept();
+      } else {
+        console.log('[SSH] Rejecting unknown global request:', info.type);
+        reject();
+      }
+    });
+
+    // Set up keepalive timer
+    let keepaliveTimer = null;
+    const startKeepalive = () => {
+      if (keepaliveTimer) {
+        clearInterval(keepaliveTimer);
+      }
+      keepaliveTimer = setInterval(() => {
+        if (client.connected) {
+          console.log('[SSH] Sending keepalive');
+          client.ping();
+        } else {
+          console.log('[SSH] Client disconnected, clearing keepalive');
+          clearInterval(keepaliveTimer);
+          keepaliveTimer = null;
+        }
+      }, 10000);
+    };
+
+    // Start keepalive when client is ready
+    client.on('ready', () => {
+      console.log('[SSH] Client ready, starting keepalive');
+      startKeepalive();
+    });
+
+    // Clean up keepalive on client end
+    client.on('end', () => {
+      console.log('[SSH] Client disconnected');
+      if (keepaliveTimer) {
+        clearInterval(keepaliveTimer);
+        keepaliveTimer = null;
+      }
     });
 
     client.on('authentication', async (ctx) => {
@@ -181,13 +227,14 @@ class SSHServer {
             host: remoteUrl.hostname,
             port: 22,
             username: 'git',
-            keepaliveInterval: 10000,
-            keepaliveCountMax: 3,
             readyTimeout: 10000,
             tryKeyboard: false,
-            // debug: (msg) => {
-            //   console.debug('[GitHub SSH Debug]', msg);
-            // },
+            debug: (msg) => {
+              console.debug('[GitHub SSH Debug]', msg);
+            },
+            // Disable keepalive for remote connection since we're handling it at the proxy level
+            keepaliveInterval: 0,
+            keepaliveCountMax: 0,
           };
 
           // Get the client's SSH key that was used for authentication
@@ -253,7 +300,12 @@ class SSHServer {
             // Execute the Git command on remote
             remoteGitSsh.exec(
               command,
-              { env: { GIT_PROTOCOL: 'version=2' } },
+              {
+                env: {
+                  GIT_PROTOCOL: 'version=2',
+                  GIT_TERMINAL_PROMPT: '0',
+                },
+              },
               (err, remoteStream) => {
                 if (err) {
                   console.error('[SSH] Failed to execute command on remote:', err);
@@ -269,18 +321,72 @@ class SSHServer {
                   stream.end();
                 });
 
+                // Pipe data between client and remote
+                stream.on('data', (data) => {
+                  console.debug('[SSH] Client -> Remote:', data.toString().slice(0, 100));
+                  remoteStream.write(data);
+                });
+
+                remoteStream.on('data', (data) => {
+                  console.debug('[SSH] Remote -> Client:', data.toString().slice(0, 100));
+                  stream.write(data);
+                });
+
                 // Handle stream close
                 remoteStream.on('close', () => {
                   console.log('[SSH] Remote stream closed');
-                  remoteGitSsh.end();
+                  // Don't end the client stream immediately, let Git protocol complete
                 });
-
-                // Pipe data between client and remote
-                stream.pipe(remoteStream).pipe(stream);
 
                 remoteStream.on('exit', (code) => {
                   console.log(`[SSH] Remote command exited with code ${code}`);
+                  if (code !== 0) {
+                    console.error(`[SSH] Remote command failed with code ${code}`);
+                  }
+                  // Don't end the connection here, let the client end it
+                });
+
+                // Handle client stream end
+                stream.on('end', () => {
+                  console.log('[SSH] Client stream ended');
+                  // End the SSH connection after a short delay to allow cleanup
+                  setTimeout(() => {
+                    console.log('[SSH] Ending SSH connection after client stream end');
+                    remoteGitSsh.end();
+                  }, 500);
+                });
+
+                // Handle client stream error
+                stream.on('error', (err) => {
+                  console.error('[SSH] Client stream error:', err);
                   remoteGitSsh.end();
+                });
+
+                // Handle remote stream error
+                remoteStream.on('error', (err) => {
+                  console.error('[SSH] Remote stream error:', err);
+                  // Don't end the client stream immediately, let Git protocol complete
+                });
+
+                // Handle connection end
+                remoteGitSsh.on('end', () => {
+                  console.log('[SSH] Remote connection ended');
+                });
+
+                // Handle connection close
+                remoteGitSsh.on('close', () => {
+                  console.log('[SSH] Remote connection closed');
+                });
+
+                // Add a timeout to ensure the connection is closed if it hangs
+                const connectionTimeout = setTimeout(() => {
+                  console.log('[SSH] Connection timeout, ending connection');
+                  remoteGitSsh.end();
+                }, 30000); // 30 seconds timeout
+
+                // Clear the timeout when the connection is closed
+                remoteGitSsh.on('close', () => {
+                  clearTimeout(connectionTimeout);
                 });
               },
             );
@@ -335,18 +441,71 @@ class SSHServer {
                       stream.end();
                     });
 
+                    // Pipe data between client and remote
+                    stream.on('data', (data) => {
+                      console.debug('[SSH] Client -> Remote:', data.toString().slice(0, 100));
+                      remoteStream.write(data);
+                    });
+
+                    remoteStream.on('data', (data) => {
+                      console.debug('[SSH] Remote -> Client:', data.toString().slice(0, 100));
+                      stream.write(data);
+                    });
+
                     // Handle stream close
                     remoteStream.on('close', () => {
                       console.log('[SSH] Remote stream closed with proxy key');
-                      proxyGitSsh.end();
+                      // Don't end the client stream immediately, let Git protocol complete
                     });
-
-                    // Pipe data between client and remote
-                    stream.pipe(remoteStream).pipe(stream);
 
                     remoteStream.on('exit', (code) => {
                       console.log(`[SSH] Remote command exited with code ${code} using proxy key`);
+                      // Don't end the connection here, let the client end it
+                    });
+
+                    // Handle client stream end
+                    stream.on('end', () => {
+                      console.log('[SSH] Client stream ended with proxy key');
+                      // End the SSH connection after a short delay to allow cleanup
+                      setTimeout(() => {
+                        console.log(
+                          '[SSH] Ending SSH connection after client stream end with proxy key',
+                        );
+                        proxyGitSsh.end();
+                      }, 500);
+                    });
+
+                    // Handle client stream error
+                    stream.on('error', (err) => {
+                      console.error('[SSH] Client stream error with proxy key:', err);
                       proxyGitSsh.end();
+                    });
+
+                    // Handle remote stream error
+                    remoteStream.on('error', (err) => {
+                      console.error('[SSH] Remote stream error with proxy key:', err);
+                      // Don't end the client stream immediately, let Git protocol complete
+                    });
+
+                    // Handle connection end
+                    proxyGitSsh.on('end', () => {
+                      console.log('[SSH] Remote connection ended with proxy key');
+                    });
+
+                    // Handle connection close
+                    proxyGitSsh.on('close', () => {
+                      console.log('[SSH] Remote connection closed with proxy key');
+                    });
+
+                    // Add a timeout to ensure the connection is closed if it hangs
+                    const proxyConnectionTimeout = setTimeout(() => {
+                      console.log('[SSH] Connection timeout with proxy key, ending connection');
+                      proxyGitSsh.end();
+                    }, 30000); // 30 seconds timeout
+
+                    // Clear the timeout when the connection is closed
+                    proxyGitSsh.on('close', () => {
+                      clearTimeout(proxyConnectionTimeout);
                     });
                   },
                 );
