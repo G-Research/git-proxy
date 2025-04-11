@@ -366,6 +366,12 @@ class SSHServer {
                   }
                 });
 
+                remoteStream.on('end', () => {
+                  console.log('[SSH] Remote stream ended');
+                  stream.exit(0);
+                  stream.end();
+                });
+
                 // Handle stream close
                 remoteStream.on('close', () => {
                   console.log('[SSH] Remote stream closed');
