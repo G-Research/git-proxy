@@ -25,6 +25,7 @@ let _urlShortener = defaultSettings.urlShortener;
 let _contactEmail = defaultSettings.contactEmail;
 let _csrfProtection = defaultSettings.csrfProtection;
 let _domains = defaultSettings.domains;
+let _sshConfig = defaultSettings.ssh;
 
 // Get configured proxy URL
 const getProxyUrl = () => {
@@ -33,6 +34,10 @@ const getProxyUrl = () => {
   }
 
   return _proxyUrl;
+};
+
+const getSSHProxyUrl = () => {
+  return getProxyUrl().replace('https://', 'git@');
 };
 
 // Gets a list of authorised repositories
@@ -197,8 +202,16 @@ const getDomains = () => {
   return _domains;
 };
 
+const getSSHConfig = () => {
+  if (_userSettings !== null && _userSettings.ssh) {
+    _sshConfig = _userSettings.ssh;
+  }
+  return _sshConfig;
+};
+
 exports.getAPIs = getAPIs;
 exports.getProxyUrl = getProxyUrl;
+exports.getSSHProxyUrl = getSSHProxyUrl;
 exports.getAuthorisedList = getAuthorisedList;
 exports.getDatabase = getDatabase;
 exports.logConfiguration = logConfiguration;
@@ -216,3 +229,4 @@ exports.getPlugins = getPlugins;
 exports.getSSLKeyPath = getSSLKeyPath;
 exports.getSSLCertPath = getSSLCertPath;
 exports.getDomains = getDomains;
+exports.getSSHConfig = getSSHConfig;

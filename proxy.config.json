@@ -97,5 +97,13 @@
   "urlShortener": "",
   "contactEmail": "",
   "csrfProtection": true,
-  "plugins": []
+  "plugins": [],
+  "ssh": {
+    "enabled": true,
+    "port": 2222,
+    "hostKey": {
+      "privateKeyPath": ".ssh/id_rsa",
+      "publicKeyPath": ".ssh/id_rsa.pub"
+    }
+  }
 }

@@ -23,6 +23,7 @@ class Action {
   author;
   user;
   attestation;
+  protocol = 'https';
 
   /**
    *

@@ -6,18 +6,21 @@ const exec = async (req) => {
   const repoName = getRepoNameFromUrl(req.originalUrl);
   const paths = req.originalUrl.split('/');
 
-  let type = 'default';
+  // Determine protocol based on request source
+  const protocol = req.isSSH ? 'ssh' : 'https';
+  let type = `${protocol}-default`;
 
   if (paths[paths.length - 1].endsWith('git-upload-pack') && req.method == 'GET') {
-    type = 'pull';
+    type = `${protocol}-pull`;
   }
   if (
     paths[paths.length - 1] == 'git-receive-pack' &&
     req.method == 'POST' &&
     req.headers['content-type'] == 'application/x-git-receive-pack-request'
   ) {
-    type = 'push';
+    type = `${protocol}-push`;
   }
+
   return new actions.Action(id, type, req.method, timestamp, repoName);
 };
 
