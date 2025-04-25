@@ -191,13 +191,14 @@ class SSHServer {
           .replace(/^\/+|\/+$/g, '');
 
         const req = {
-          method: command === 'git-upload-pack' ? 'GET' : 'POST',
+          method: command.startsWith('git-upload-pack') ? 'GET' : 'POST',
           originalUrl: repoPath,
           isSSH: true,
           headers: {
             'user-agent': 'git/2.0.0',
-            'content-type':
-              command === 'git-receive-pack' ? 'application/x-git-receive-pack-request' : undefined,
+            'content-type': command.startsWith('git-receive-pack')
+              ? 'application/x-git-receive-pack-request'
+              : undefined,
           },
         };
 
