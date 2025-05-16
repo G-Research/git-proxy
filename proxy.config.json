@@ -2,6 +2,10 @@
   "proxyUrl": "https://github.com",
   "cookieSecret": "cookie secret",
   "sessionMaxAgeHours": 12,
+  "rateLimit": {
+    "windowMs": 60000,
+    "limit": 150
+  },
   "tempPassword": {
     "sendEmail": false,
     "emailConfig": {}
@@ -88,6 +92,39 @@
         "tooltip": {
           "text": "Are you happy for this contribution to be pushed upstream?",
           "links": []
+        }
+      }
+    ]
+  },
+  "configurationSources": {
+    "enabled": false,
+    "reloadIntervalSeconds": 60,
+    "merge": false,
+    "sources": [
+      {
+        "type": "file",
+        "enabled": false,
+        "path": "./external-config.json"
+      },
+      {
+        "type": "http",
+        "enabled": false,
+        "url": "http://config-service/git-proxy-config",
+        "headers": {},
+        "auth": {
+          "type": "bearer",
+          "token": ""
+        }
+      },
+      {
+        "type": "git",
+        "enabled": false,
+        "repository": "https://git-server.com/project/git-proxy-config",
+        "branch": "main",
+        "path": "git-proxy/config.json",
+        "auth": {
+          "type": "ssh",
+          "privateKeyPath": "/path/to/.ssh/id_rsa"
         }
       }
     ]
