@@ -1,3 +1,5 @@
+import { Options as RateLimitOptions } from 'express-rate-limit';
+
 export interface UserSettings {
   authorisedList: AuthorisedRepo[];
   sink: Database[];
@@ -18,8 +20,18 @@ export interface UserSettings {
   contactEmail: string;
   csrfProtection: boolean;
   domains: Record<string, unknown>;
+  ssh: SSHConfig;
+  rateLimit: RateLimitConfig;
 }
 
+export interface SSHConfig {
+  enabled: boolean;
+  port: number;
+  hostKey: {
+    privateKeyPath: string;
+    publicKeyPath: string;
+  };
+}
 export interface TLSConfig {
   enabled?: boolean;
   cert?: string;
@@ -50,3 +62,7 @@ export interface TempPasswordConfig {
   sendEmail: boolean;
   emailConfig: Record<string, unknown>;
 }
+
+export type RateLimitConfig = Partial<
+  Pick<RateLimitOptions, 'windowMs' | 'limit' | 'message' | 'statusCode'>
+>;
