@@ -11,11 +11,13 @@ describe('default configuration', function () {
   it('should use default values if no user-settings.json file exists', function () {
     const config = require('../src/config');
     config.logConfiguration();
+    const enabledMethods = defaultSettings.authentication.filter(method => method.enabled);
 
-    expect(config.getAuthentication()).to.be.eql(defaultSettings.authentication[0]);
+    expect(config.getAuthMethods()).to.deep.equal(enabledMethods);
     expect(config.getDatabase()).to.be.eql(defaultSettings.sink[0]);
     expect(config.getTempPasswordConfig()).to.be.eql(defaultSettings.tempPassword);
     expect(config.getAuthorisedList()).to.be.eql(defaultSettings.authorisedList);
+    expect(config.getRateLimit()).to.be.eql(defaultSettings.rateLimit);
     expect(config.getTLSKeyPemPath()).to.be.eql(defaultSettings.tls.key);
     expect(config.getTLSCertPemPath()).to.be.eql(defaultSettings.tls.cert);
   });
@@ -47,9 +49,10 @@ describe('user configuration', function () {
     fs.writeFileSync(tempUserFile, JSON.stringify(user));
 
     const config = require('../src/config');
+    const enabledMethods = defaultSettings.authentication.filter(method => method.enabled);
 
     expect(config.getAuthorisedList()).to.be.eql(user.authorisedList);
-    expect(config.getAuthentication()).to.be.eql(defaultSettings.authentication[0]);
+    expect(config.getAuthMethods()).to.deep.equal(enabledMethods);
     expect(config.getDatabase()).to.be.eql(defaultSettings.sink[0]);
     expect(config.getTempPasswordConfig()).to.be.eql(defaultSettings.tempPassword);
   });
@@ -66,9 +69,13 @@ describe('user configuration', function () {
     fs.writeFileSync(tempUserFile, JSON.stringify(user));
 
     const config = require('../src/config');
+    const authMethods = config.getAuthMethods();
+    const googleAuth = authMethods.find(method => method.type === 'google');
 
-    expect(config.getAuthentication()).to.be.eql(user.authentication[0]);
-    expect(config.getAuthentication()).to.not.be.eql(defaultSettings.authentication[0]);
+    expect(googleAuth).to.not.be.undefined;
+    expect(googleAuth.enabled).to.be.true;
+    expect(config.getAuthMethods()).to.deep.include(user.authentication[0]);
+    expect(config.getAuthMethods()).to.not.be.eql(defaultSettings.authentication);
     expect(config.getDatabase()).to.be.eql(defaultSettings.sink[0]);
     expect(config.getTempPasswordConfig()).to.be.eql(defaultSettings.tempPassword);
   });
@@ -85,10 +92,11 @@ describe('user configuration', function () {
     fs.writeFileSync(tempUserFile, JSON.stringify(user));
 
     const config = require('../src/config');
+    const enabledMethods = defaultSettings.authentication.filter(method => method.enabled);
 
     expect(config.getDatabase()).to.be.eql(user.sink[0]);
     expect(config.getDatabase()).to.not.be.eql(defaultSettings.sink[0]);
-    expect(config.getAuthentication()).to.be.eql(defaultSettings.authentication[0]);
+    expect(config.getAuthMethods()).to.deep.equal(enabledMethods);
     expect(config.getTempPasswordConfig()).to.be.eql(defaultSettings.tempPassword);
   });
 
@@ -105,6 +113,21 @@ describe('user configuration', function () {
 
     expect(config.getTLSKeyPemPath()).to.be.eql(user.tls.key);
     expect(config.getTLSCertPemPath()).to.be.eql(user.tls.cert);
+  });
+
+  it('should override default settings for rate limiting', function () {
+    const limitConfig = {
+      rateLimit: {
+        windowMs: 60000,
+        limit: 1500,
+      },
+    };
+    fs.writeFileSync(tempUserFile, JSON.stringify(limitConfig));
+
+    const config = require('../src/config');
+
+    expect(config.getRateLimit().windowMs).to.be.eql(limitConfig.rateLimit.windowMs);
+    expect(config.getRateLimit().limit).to.be.eql(limitConfig.rateLimit.limit);
   });
 
   afterEach(function () {
