@@ -10,11 +10,13 @@ import {
   getTLSKeyPemPath,
   getTLSCertPemPath,
   getTLSEnabled,
+  getSSHConfig,
 } from '../config';
 import { addUserCanAuthorise, addUserCanPush, createRepo, getRepos } from '../db';
 import { PluginLoader } from '../plugin';
 import chain from './chain';
 import { Repo } from '../db/types';
+import SSHServer from './ssh/server';
 
 const { GIT_PROXY_SERVER_PORT: proxyHttpPort, GIT_PROXY_HTTPS_SERVER_PORT: proxyHttpsPort } =
   require('../config/env').serverConfig;
@@ -27,7 +29,7 @@ const options = {
   cert: getTLSEnabled() ? fs.readFileSync(getTLSCertPemPath()) : undefined,
 };
 
-const proxyPreparations = async () => {
+export const proxyPreparations = async () => {
   const plugins = getPlugins();
   const pluginLoader = new PluginLoader(plugins);
   await pluginLoader.load();
@@ -44,10 +46,16 @@ const proxyPreparations = async () => {
       await addUserCanAuthorise(x.name, 'admin');
     }
   });
+
+  // Initialize SSH server if enabled
+  if (getSSHConfig().enabled) {
+    const sshServer = new SSHServer();
+    sshServer.start();
+  }
 };
 
 // just keep this async incase it needs async stuff in the future
-const createApp = async () => {
+export const createApp = async () => {
   const app = express();
   // Setup the proxy middleware
   app.use(bodyParser.raw(options));
@@ -55,7 +63,7 @@ const createApp = async () => {
   return app;
 };
 
-const start = async () => {
+export const start = async () => {
   const app = await createApp();
   await proxyPreparations();
   http.createServer(options as any, app).listen(proxyHttpPort, () => {
