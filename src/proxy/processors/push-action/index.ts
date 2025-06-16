@@ -13,6 +13,7 @@ import { exec as checkCommitMessages } from './checkCommitMessages';
 import { exec as checkAuthorEmails } from './checkAuthorEmails';
 import { exec as checkUserPushPermission } from './checkUserPushPermission';
 import { exec as clearBareClone } from './clearBareClone';
+import { exec as captureSSHKey } from './captureSSHKey';
 
 export {
   parsePush,
@@ -30,4 +31,5 @@ export {
   checkAuthorEmails,
   checkUserPushPermission,
   clearBareClone,
+  captureSSHKey,
 };
