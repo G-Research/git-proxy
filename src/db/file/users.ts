@@ -25,11 +25,7 @@ export const findUser = (username: string) => {
       if (err) {
         reject(err);
       } else {
-        if (!doc) {
-          resolve(null);
-        } else {
-          resolve(doc);
-        }
+        resolve(doc || null);
       }
     });
   });
@@ -43,11 +39,7 @@ export const findUserByOIDC = function (oidcId: string) {
       if (err) {
         reject(err);
       } else {
-        if (!doc) {
-          resolve(null);
-        } else {
-          resolve(doc);
-        }
+        resolve(doc || null);
       }
     });
   });
@@ -140,12 +132,18 @@ export const getUsers = (query: any = {}) => {
     db.find(query, (err: Error, docs: User[]) => {
       // ignore for code coverage as neDB rarely returns errors even for an invalid query
       /* istanbul ignore if */
-      if (err) {
-        reject(err);
-      } else {
-        resolve(docs);
-      }
+      if (err) reject(err);
+      else resolve(docs);
     });
+  });
+};
+
+export const getPublicKeys = (username: string): Promise<string[]> => {
+  return findUser(username).then((user) => {
+    if (!user) {
+      throw new Error('User not found');
+    }
+    return user.publicKeys || [];
   });
 };
 

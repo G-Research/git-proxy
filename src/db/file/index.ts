@@ -36,5 +36,6 @@ export const {
   updateUser,
   addPublicKey,
   removePublicKey,
+  getPublicKeys,
   findUserBySSHKey,
 } = users;
