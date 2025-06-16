@@ -49,6 +49,15 @@ class Action {
   lastStep?: Step;
   proxyGitPath?: string;
   protocol: 'https' | 'ssh' = 'https';
+  sshUser?: {
+    username: string;
+    userId: string;
+    sshKeyInfo?: {
+      publicKeyString: string;
+      algorithm: string;
+      comment: string;
+    };
+  };
 
   /**
    * Create an action.

@@ -116,18 +116,18 @@ class SSHServer {
 
           console.log(`[SSH] Public key authentication successful for user ${user.username}`);
           client.username = user.username;
-          // Store the user's private key for later use with GitHub
-          client.userPrivateKey = {
-            algo: ctx.key.algo,
-            data: ctx.key.data,
+          client.userId = user._id;
+
+          // Store the user's SSH key information for later use
+          client.userSSHKeyInfo = {
+            publicKeyString: keyString,
+            algorithm: ctx.key.algo,
             comment: ctx.key.comment || '',
           };
-          console.log(
-            `[SSH] Stored key info - Algorithm: ${ctx.key.algo}, Data length: ${ctx.key.data.length}, Data type: ${typeof ctx.key.data}`,
-          );
-          if (Buffer.isBuffer(ctx.key.data)) {
-            console.log('[SSH] Key data is a Buffer');
-          }
+
+          // For SSH key forwarding, we need to capture the private key during the connection
+          // This will be handled when we create the push action
+          console.log(`[SSH] Stored SSH info - Algorithm: ${ctx.key.algo}, User: ${user.username}`);
           ctx.accept();
         } catch (error) {
           console.error('[SSH] Error during public key authentication:', error);
@@ -199,6 +199,11 @@ class SSHServer {
             'content-type': command.startsWith('git-receive-pack')
               ? 'application/x-git-receive-pack-request'
               : undefined,
+          },
+          sshUser: {
+            username: session._channel._client.username,
+            userId: session._channel._client.userId,
+            sshKeyInfo: session._channel._client.userSSHKeyInfo,
           },
         };
 

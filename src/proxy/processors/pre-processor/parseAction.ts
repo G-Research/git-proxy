@@ -5,6 +5,15 @@ const exec = async (req: {
   method: string;
   headers: Record<string, string>;
   isSSH: boolean;
+  sshUser?: {
+    username: string;
+    userId: string;
+    sshKeyInfo?: {
+      publicKeyString: string;
+      algorithm: string;
+      comment: string;
+    };
+  };
 }) => {
   const id = Date.now();
   const timestamp = id;
@@ -24,7 +33,15 @@ const exec = async (req: {
     type = 'push';
   }
 
-  return new Action(id.toString(), type, req.method, timestamp, repoName);
+  const action = new Action(id.toString(), type, req.method, timestamp, repoName);
+
+  // Set protocol and SSH user information
+  if (req.isSSH) {
+    action.protocol = 'ssh';
+    action.sshUser = req.sshUser;
+  }
+
+  return action;
 };
 
 const getRepoNameFromUrl = (url: string): string => {

@@ -46,4 +46,8 @@ export type Push = {
   timepstamp: string;
   type: string;
   url: string;
+  encryptedSSHKey?: string; // Encrypted SSH private key for authentication
+  sshKeyExpiry?: Date; // Expiry time for the SSH key
+  protocol?: 'https' | 'ssh';
+  userId?: string; // User ID for the push
 };

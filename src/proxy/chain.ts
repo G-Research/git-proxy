@@ -10,6 +10,7 @@ const pushActionChain: ((req: any, action: Action) => Promise<Action>)[] = [
   proc.push.checkAuthorEmails,
   proc.push.checkUserPushPermission,
   proc.push.checkIfWaitingAuth,
+  proc.push.captureSSHKey, // Capture SSH key before processing
   proc.push.pullRemote,
   proc.push.writePack,
   proc.push.preReceive,
