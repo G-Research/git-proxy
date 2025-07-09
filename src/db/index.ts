@@ -84,5 +84,6 @@ export const {
   getSessionStore,
   addPublicKey,
   removePublicKey,
+  getPublicKeys,
   findUserBySSHKey,
 } = sink;

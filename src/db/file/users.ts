@@ -1,6 +1,6 @@
 import fs from 'fs';
 import Datastore from '@seald-io/nedb';
-import { User } from '../types';
+import { PublicKeyRecord, User } from '../types';
 
 const COMPACTION_INTERVAL = 1000 * 60 * 60 * 24; // once per day
 
@@ -25,11 +25,7 @@ export const findUser = (username: string) => {
       if (err) {
         reject(err);
       } else {
-        if (!doc) {
-          resolve(null);
-        } else {
-          resolve(doc);
-        }
+        resolve(doc || null);
       }
     });
   });
@@ -43,11 +39,7 @@ export const findUserByOIDC = function (oidcId: string) {
       if (err) {
         reject(err);
       } else {
-        if (!doc) {
-          resolve(null);
-        } else {
-          resolve(doc);
-        }
+        resolve(doc || null);
       }
     });
   });
@@ -140,16 +132,47 @@ export const getUsers = (query: any = {}) => {
     db.find(query, (err: Error, docs: User[]) => {
       // ignore for code coverage as neDB rarely returns errors even for an invalid query
       /* istanbul ignore if */
-      if (err) {
-        reject(err);
-      } else {
-        resolve(docs);
-      }
+      if (err) reject(err);
+      else resolve(docs);
     });
   });
 };
 
-export const addPublicKey = function (username: string, publicKey: string) {
+export const getPublicKeys = (username: string): Promise<PublicKeyRecord[]> => {
+  return findUser(username).then((user) => {
+    if (!user) {
+      throw new Error('User not found');
+    }
+    return Array.isArray(user.publicKeys) ? user.publicKeys : [];
+  });
+};
+
+export const addPublicKey = (username: string, record: PublicKeyRecord): Promise<User> =>
+  new Promise<User>((resolve, reject) => {
+    findUser(username)
+      .then((user) => {
+        if (!user) {
+          reject(new Error('User not found'));
+          return;
+        }
+        if (!Array.isArray(user.publicKeys)) user.publicKeys = [];
+
+        const exists = user.publicKeys.some((r) => r.key === record.key);
+        if (exists) return resolve(user);
+
+        user.publicKeys.push({
+          ...record,
+          addedAt: record.addedAt ?? new Date().toISOString(),
+        });
+
+        updateUser(user)
+          .then(() => resolve(user))
+          .catch(reject);
+      })
+      .catch(reject);
+  });
+
+export const removePublicKey = function (username: string, canonicalKey: string) {
   return new Promise<User>((resolve, reject) => {
     findUser(username)
       .then((user) => {
@@ -157,43 +180,30 @@ export const addPublicKey = function (username: string, publicKey: string) {
           reject(new Error('User not found'));
           return;
         }
-        if (!user.publicKeys) {
+
+        if (!Array.isArray(user.publicKeys)) {
           user.publicKeys = [];
+          return resolve(user);
         }
-        if (!user.publicKeys.includes(publicKey)) {
-          user.publicKeys.push(publicKey);
-          exports.updateUser(user).then(resolve).catch(reject);
-        } else {
-          resolve(user);
+
+        const before = user.publicKeys.length;
+        user.publicKeys = user.publicKeys.filter((rec) => rec.key !== canonicalKey);
+
+        if (user.publicKeys.length === before) {
+          return reject(new Error('SSH key not found'));
         }
+
+        updateUser(user)
+          .then(() => resolve(user))
+          .catch(reject);
       })
       .catch(reject);
   });
 };
 
-export const removePublicKey = function (username: string, publicKey: string) {
-  return new Promise<User>((resolve, reject) => {
-    findUser(username)
-      .then((user) => {
-        if (!user) {
-          reject(new Error('User not found'));
-          return;
-        }
-        if (!user.publicKeys) {
-          user.publicKeys = [];
-          resolve(user);
-          return;
-        }
-        user.publicKeys = user.publicKeys.filter((key) => key !== publicKey);
-        exports.updateUser(user).then(resolve).catch(reject);
-      })
-      .catch(reject);
-  });
-};
-
-export const findUserBySSHKey = function (sshKey: string) {
-  return new Promise<User | null>((resolve, reject) => {
-    db.findOne({ publicKeys: sshKey }, (err, doc) => {
+export const findUserBySSHKey = (sshKey: string): Promise<User | null> =>
+  new Promise((resolve, reject) => {
+    db.findOne({ 'publicKeys.key': sshKey }, (err, doc) => {
       if (err) {
         reject(err);
       } else {
@@ -205,4 +215,3 @@ export const findUserBySSHKey = function (sshKey: string) {
       }
     });
   });
-};

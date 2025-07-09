@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 
 import defaultSettings from '../../proxy.config.json';
+import { serverConfig } from './env';
 import { configFile, validate } from './file';
 import { ConfigLoader, Configuration } from './ConfigLoader';
 import {
@@ -23,7 +24,7 @@ let _apiAuthentication: Authentication[] = defaultSettings.apiAuthentication;
 let _tempPassword: TempPasswordConfig = defaultSettings.tempPassword;
 let _proxyUrl = defaultSettings.proxyUrl;
 let _api: Record<string, unknown> = defaultSettings.api;
-let _cookieSecret: string = defaultSettings.cookieSecret;
+let _cookieSecret: string = serverConfig.GIT_PROXY_COOKIE_SECRET || defaultSettings.cookieSecret;
 let _sessionMaxAgeHours: number = defaultSettings.sessionMaxAgeHours;
 let _plugins: any[] = defaultSettings.plugins;
 let _commitConfig: Record<string, any> = defaultSettings.commitConfig;
@@ -67,6 +68,13 @@ export const getSSHConfig = () => {
   }
   return _sshConfig;
 };
+export const getPublicSSHConfig = () => {
+  if (_userSettings !== null && _userSettings.ssh) {
+    _sshConfig = _userSettings.ssh;
+  }
+  const { enabled = false, port = 22 } = _sshConfig;
+  return { enabled, port };
+};
 
 // Gets a list of authorised repositories
 export const getAuthorisedList = () => {
@@ -94,21 +102,25 @@ export const getDatabase = () => {
     if (ix) {
       const db = _database[ix];
       if (db.enabled) {
+        // if mongodb is configured and connection string unspecified, fallback to env var
+        if (db.type === 'mongo' && !db.connectionString) {
+          db.connectionString = serverConfig.GIT_PROXY_MONGO_CONNECTION_STRING;
+        }
         return db;
       }
     }
   }
 
-  throw Error('No database cofigured!');
+  throw Error('No database configured!');
 };
 
 /**
  * Get the list of enabled authentication methods
- * 
+ *
  * At least one authentication method must be enabled.
- * @return {Array} List of enabled authentication methods
+ * @return {Authentication[]} List of enabled authentication methods
  */
-export const getAuthMethods = () => {
+export const getAuthMethods = (): Authentication[] => {
   if (_userSettings !== null && _userSettings.authentication) {
     _authentication = _userSettings.authentication;
   }
@@ -116,7 +128,7 @@ export const getAuthMethods = () => {
   const enabledAuthMethods = _authentication.filter((auth) => auth.enabled);
 
   if (enabledAuthMethods.length === 0) {
-    throw new Error("No authentication method enabled");
+    throw new Error('No authentication method enabled');
   }
 
   return enabledAuthMethods;
@@ -124,16 +136,20 @@ export const getAuthMethods = () => {
 
 /**
  * Get the list of enabled authentication methods for API endpoints
- * 
+ *
  * If no API authentication methods are enabled, all endpoints are public.
- * @return {Array} List of enabled authentication methods
+ * @return {Authentication[]} List of enabled authentication methods
  */
-export const getAPIAuthMethods = () => {
+export const getAPIAuthMethods = (): Authentication[] => {
   if (_userSettings !== null && _userSettings.apiAuthentication) {
     _apiAuthentication = _userSettings.apiAuthentication;
   }
 
-  const enabledAuthMethods = _apiAuthentication.filter(auth => auth.enabled);
+  const enabledAuthMethods = _apiAuthentication.filter((auth) => auth.enabled);
+
+  if (enabledAuthMethods.length === 0) {
+    console.log('Warning: No authentication method enabled for API endpoints.');
+  }
 
   return enabledAuthMethods;
 };
