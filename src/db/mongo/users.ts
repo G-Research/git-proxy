@@ -1,4 +1,4 @@
-import { User } from '../types';
+import { PublicKeyRecord, User } from '../types';
 
 const connect = require('./helper').connect;
 const collectionName = 'users';
@@ -26,6 +26,9 @@ export const deleteUser = async function (username: string) {
 };
 
 export const createUser = async function (user: User) {
+  if (!user.publicKeys) {
+    user.publicKeys = [];
+  }
   user.username = user.username.toLowerCase();
   user.email = user.email.toLowerCase();
   const collection = await connect(collectionName);
@@ -33,6 +36,9 @@ export const createUser = async function (user: User) {
 };
 
 export const updateUser = async (user: User) => {
+  if (!user.publicKeys) {
+    user.publicKeys = [];
+  }
   user.username = user.username.toLowerCase();
   if (user.email) {
     user.email = user.email.toLowerCase();
@@ -40,4 +46,46 @@ export const updateUser = async (user: User) => {
   const options = { upsert: true };
   const collection = await connect(collectionName);
   await collection.updateOne({ username: user.username }, { $set: user }, options);
+};
+
+export const addPublicKey = async (username: string, record: PublicKeyRecord) => {
+  const collection = await connect(collectionName);
+
+  return collection.updateOne(
+    {
+      username: username.toLowerCase(),
+      'publicKeys.key': { $ne: record.key },
+    },
+    {
+      $push: {
+        publicKeys: {
+          key: record.key,
+          name: record.name,
+          addedAt: record.addedAt ?? new Date().toISOString(),
+        },
+      },
+    },
+  );
+};
+
+export const removePublicKey = async (username: string, canonicalKey: string) => {
+  const collection = await connect(collectionName);
+
+  return collection.updateOne(
+    { username: username.toLowerCase() },
+    { $pull: { publicKeys: { key: canonicalKey } } },
+  );
+};
+
+export const findUserBySSHKey = async (sshKey: string): Promise<User | null> => {
+  const collection = await connect(collectionName);
+  return collection.findOne({ 'publicKeys.key': sshKey });
+};
+
+export const getPublicKeys = async (username: string): Promise<PublicKeyRecord[]> => {
+  const user = await findUser(username.toLowerCase());
+  if (!user) {
+    throw new Error('User not found');
+  }
+  return Array.isArray(user.publicKeys) ? user.publicKeys : [];
 };
