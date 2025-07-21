@@ -1,5 +1,4 @@
 import express, { Application } from 'express';
-import bodyParser from 'body-parser';
 import http from 'http';
 import https from 'https';
 import fs from 'fs';
@@ -31,8 +30,8 @@ const options: ServerOptions = {
   inflate: true,
   limit: '100000kb',
   type: '*/*',
-  key: getTLSEnabled() ? fs.readFileSync(getTLSKeyPemPath()) : undefined,
-  cert: getTLSEnabled() ? fs.readFileSync(getTLSCertPemPath()) : undefined,
+  key: getTLSEnabled() && getTLSKeyPemPath() ? fs.readFileSync(getTLSKeyPemPath()!) : undefined,
+  cert: getTLSEnabled() && getTLSCertPemPath() ? fs.readFileSync(getTLSCertPemPath()!) : undefined,
 };
 
 export const proxyPreparations = async () => {
@@ -57,8 +56,6 @@ export const proxyPreparations = async () => {
 // just keep this async incase it needs async stuff in the future
 const createApp = async (): Promise<Application> => {
   const app = express();
-  // Setup the proxy middleware
-  app.use(bodyParser.raw(options));
   app.use('/', router);
   return app;
 };
