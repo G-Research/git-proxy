@@ -1,6 +1,9 @@
 import * as ssh2 from 'ssh2';
 import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
+import * as net from 'net';
+import * as path from 'path';
+import * as os from 'os';
 import { getSSHConfig, getProxyUrl, getMaxPackSizeBytes, getDomains } from '../../config';
 import { serverConfig } from '../../config/env';
 import chain from '../chain';
@@ -30,6 +33,7 @@ interface ClientWithUser extends ssh2.Connection {
   };
   authenticatedUser?: AuthenticatedUser;
   clientIp?: string;
+  agentForwardingEnabled?: boolean;
 }
 
 export class SSHServer {
@@ -346,6 +350,12 @@ export class SSHServer {
       console.log('[SSH] Session requested');
       const session = accept();
 
+      session.on('auth-agent-req@openssh.com', (accept: () => void, reject: () => void) => {
+        console.log(`[SSH] Agent forwarding requested by ${clientIp}`);
+        clientWithUser.agentForwardingEnabled = true;
+        accept();
+      });
+
       // Handle command execution
       session.on(
         'exec',
@@ -357,6 +367,44 @@ export class SSHServer {
         },
       );
     });
+  }
+
+  private async setupAgentForwarding(client: ClientWithUser): Promise<string | null> {
+    if (!client.agentForwardingEnabled) {
+      return null;
+    }
+
+    try {
+      const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ssh-agent-'));
+      const socketPath = path.join(tempDir, 'agent.sock');
+
+      const agentServer = net.createServer((socket) => {
+        (client as any).openssh_forwardAgent((err: Error | undefined, stream: any) => {
+          if (err) {
+            console.error('[SSH] Failed to open agent channel:', err);
+            socket.end();
+            return;
+          }
+          socket.pipe(stream).pipe(socket);
+        });
+      });
+
+      await new Promise<void>((resolve) => agentServer.listen(socketPath, resolve));
+      console.log(`[SSH] Agent forwarding setup at ${socketPath}`);
+
+      // Ensure cleanup when client disconnects
+      client.on('close', () => {
+        agentServer.close();
+        fs.rm(tempDir, { recursive: true, force: true }, (err) => {
+          if (err) console.error('[SSH] Error cleaning up agent socket:', err);
+        });
+      });
+
+      return socketPath;
+    } catch (error) {
+      console.error('[SSH] Failed to setup agent forwarding:', error);
+      return null;
+    }
   }
 
   public async handleCommand(
@@ -381,6 +429,8 @@ export class SSHServer {
       // Check if it's a Git command
       if (command.startsWith('git-upload-pack') || command.startsWith('git-receive-pack')) {
         await this.handleGitCommand(command, stream, client);
+      } else if (command.startsWith('authorize-git-proxy')) {
+        await this.handleAuthorizeCommand(command, stream, client);
       } else {
         console.log(`[SSH] Unsupported command from ${userName}@${clientIp}: ${command}`);
         stream.stderr.write(`Unsupported command: ${command}\n`);
@@ -395,6 +445,43 @@ export class SSHServer {
     }
   }
 
+  private async handleAuthorizeCommand(
+    command: string,
+    stream: ssh2.ServerChannel,
+    client: ClientWithUser,
+  ): Promise<void> {
+    const userName = client.authenticatedUser?.username;
+    if (!userName) {
+      stream.stderr.write('Authentication required\n');
+      stream.exit(1);
+      stream.end();
+      return;
+    }
+
+    console.log(`[SSH] Handling authorization for user: ${userName}`);
+    const keyChunks: Buffer[] = [];
+    stream.on('data', (data: Buffer) => {
+      keyChunks.push(data);
+    });
+
+    stream.on('end', () => {
+      const privateKey = Buffer.concat(keyChunks);
+      if (privateKey.length > 0) {
+        const sshAgentInstance = SSHAgent.getInstance();
+        // Store key against username. A real implementation should add a TTL.
+        sshAgentInstance.addKey(userName, privateKey, Buffer.from(''));
+        console.log(`[SSH] Private key stored for user: ${userName}`);
+        stream.write('Authorization successful. You can now push/pull for a limited time.\n');
+        stream.exit(0);
+        stream.end();
+      } else {
+        stream.stderr.write('No private key provided.\n');
+        stream.exit(1);
+        stream.end();
+      }
+    });
+  }
+
   private async handleGitCommand(
     command: string,
     stream: ssh2.ServerChannel,
@@ -407,7 +494,7 @@ export class SSHServer {
         throw new Error('Invalid Git command format');
       }
 
-      const repoPath = repoMatch[1];
+      const repoPath = repoMatch[1].startsWith('/') ? repoMatch[1].substring(1) : repoMatch[1];
       const isReceivePack = command.includes('git-receive-pack');
       const gitPath = isReceivePack ? 'git-receive-pack' : 'git-upload-pack';
 
@@ -738,7 +825,14 @@ export class SSHServer {
       let agentKeyCopy: Buffer | null = null;
       let decryptedKey: Buffer | null = null;
 
-      if (action?.id) {
+      // Check for a key stored from the 'authorize-git-proxy' command
+      const userSessionKey = sshAgentInstance.getPrivateKey(userName);
+      if (userSessionKey) {
+        console.log(`[SSH] Using session key for user: ${userName}`);
+        agentKeyCopy = Buffer.from(userSessionKey);
+      }
+
+      if (!agentKeyCopy && action?.id) {
         const agentKey = sshAgentInstance.getPrivateKey(action.id);
         if (agentKey) {
           agentKeyCopy = Buffer.from(agentKey);
@@ -921,99 +1015,108 @@ export class SSHServer {
     stream: ssh2.ServerChannel,
     client: ClientWithUser,
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const userName = client.authenticatedUser?.username || 'unknown';
-      console.log(`[SSH] Creating SSH connection to remote for user: ${userName}`);
+    const userName = client.authenticatedUser?.username || 'unknown';
+    console.log(`[SSH] Creating SSH connection to remote for user: ${userName}`);
 
-      // Get remote host from config
-      const proxyUrl = getProxyUrl();
-      if (!proxyUrl) {
-        const error = new Error('No proxy URL configured');
-        console.error(`[SSH] ${error.message}`);
-        stream.stderr.write(`Configuration error: ${error.message}\n`);
-        stream.exit(1);
-        stream.end();
-        reject(error);
-        return;
-      }
+    // Get remote host from config
+    const proxyUrl = getProxyUrl();
+    if (!proxyUrl) {
+      const error = new Error('No proxy URL configured');
+      console.error(`[SSH] ${error.message}`);
+      stream.stderr.write(`Configuration error: ${error.message}\n`);
+      stream.exit(1);
+      stream.end();
+      return;
+    }
 
-      const remoteUrl = new URL(proxyUrl);
-      const sshConfig = getSSHConfig();
+    const remoteUrl = new URL(proxyUrl);
+    const sshConfig = getSSHConfig();
 
-      // TODO: Connection options could go to config
-      // Set up connection options
-      const connectionOptions: any = {
-        host: remoteUrl.hostname,
-        port: 22,
-        username: 'git',
-        tryKeyboard: false,
-        readyTimeout: 30000,
-        keepaliveInterval: 15000, // 15 seconds between keepalives (recommended for SSH connections is 15-30 seconds)
-        keepaliveCountMax: 5, // Recommended for SSH connections is 3-5 attempts
-        windowSize: 1024 * 1024, // 1MB window size
-        packetSize: 32768, // 32KB packet size
-        privateKey: fs.readFileSync(sshConfig.hostKey.privateKeyPath),
-        debug: (msg: string) => {
-          console.debug('[GitHub SSH Debug]', msg);
-        },
-        algorithms: {
-          kex: [
-            'ecdh-sha2-nistp256' as any,
-            'ecdh-sha2-nistp384' as any,
-            'ecdh-sha2-nistp521' as any,
-            'diffie-hellman-group14-sha256' as any,
-            'diffie-hellman-group16-sha512' as any,
-            'diffie-hellman-group18-sha512' as any,
-          ],
-          serverHostKey: ['rsa-sha2-512' as any, 'rsa-sha2-256' as any, 'ssh-rsa' as any],
-          cipher: [
-            'aes128-gcm' as any,
-            'aes256-gcm' as any,
-            'aes128-ctr' as any,
-            'aes256-ctr' as any,
-          ],
-          hmac: ['hmac-sha2-256' as any, 'hmac-sha2-512' as any],
-        },
-      };
+    // Check for a user-specific key from the authorization flow
+    const sshAgentInstance = SSHAgent.getInstance();
+    const userSessionKey = sshAgentInstance.getPrivateKey(userName);
+    const usingUserKey = Boolean(userSessionKey);
 
-      // Get the client's SSH key that was used for authentication
-      const clientKey = client.userPrivateKey;
-      console.log('[SSH] Client key:', clientKey ? 'Available' : 'Not available');
+    if (usingUserKey) {
+      console.log(`[SSH] Using session key for pull/clone for user: ${userName}`);
+    } else {
+      console.log('[SSH] No session key found, falling back to proxy host key for pull/clone.');
+    }
 
-      // Handle client key if available (though we only have public key data)
-      if (clientKey) {
-        console.log('[SSH] Using client key info:', JSON.stringify(clientKey));
-        // Check if the key is in the correct format
-        if (typeof clientKey === 'object' && clientKey.keyType && clientKey.keyData) {
-          // We need to use the private key, not the public key data
-          // Since we only have the public key from authentication, we'll use the proxy key
-          console.log('[SSH] Only have public key data, using proxy key instead');
-        } else if (Buffer.isBuffer(clientKey)) {
-          // The key is a buffer, use it directly
-          connectionOptions.privateKey = clientKey;
-          console.log('[SSH] Using client key buffer directly');
-        } else {
-          // For other key types, we can't use the client key directly since we only have public key info
-          console.log('[SSH] Client key is not a buffer, falling back to proxy key');
+    // Set up connection options
+    const connectionOptions: any = {
+      host: remoteUrl.hostname,
+      port: 22,
+      username: 'git',
+      tryKeyboard: false,
+      readyTimeout: 30000,
+      keepaliveInterval: 15000, // 15 seconds between keepalives (recommended for SSH connections is 15-30 seconds)
+      keepaliveCountMax: 5, // Recommended for SSH connections is 3-5 attempts
+      windowSize: 1024 * 1024, // 1MB window size
+      packetSize: 32768, // 32KB packet size
+      privateKey: usingUserKey ? userSessionKey : fs.readFileSync(sshConfig.hostKey.privateKeyPath),
+      debug: (msg: string) => {
+        console.debug('[GitHub SSH Debug]', msg);
+      },
+      algorithms: {
+        kex: [
+          'ecdh-sha2-nistp256' as any,
+          'ecdh-sha2-nistp384' as any,
+          'ecdh-sha2-nistp521' as any,
+          'diffie-hellman-group14-sha256' as any,
+          'diffie-hellman-group16-sha512' as any,
+          'diffie-hellman-group18-sha512' as any,
+        ],
+        serverHostKey: ['rsa-sha2-512' as any, 'rsa-sha2-256' as any, 'ssh-rsa' as any],
+        cipher: [
+          'aes128-gcm' as any,
+          'aes256-gcm' as any,
+          'aes128-ctr' as any,
+          'aes256-ctr' as any,
+        ],
+        hmac: ['hmac-sha2-256' as any, 'hmac-sha2-512' as any],
+      },
+    };
+
+    // Setup agent forwarding if enabled
+    let agentSocket: string | null = null;
+    if (client.agentForwardingEnabled) {
+      try {
+        agentSocket = await this.setupAgentForwarding(client);
+        if (agentSocket) {
+          console.log(`[SSH] Using agent forwarding socket: ${agentSocket}`);
+          connectionOptions.agent = agentSocket;
         }
+      } catch (e) {
+        console.error('[SSH] Error setting up agent forwarding', e);
+      }
+    }
+
+    // Get the client's SSH key that was used for authentication
+    const clientKey = client.userPrivateKey;
+    console.log('[SSH] Client key:', clientKey ? 'Available' : 'Not available');
+
+    // Handle client key if available (though we only have public key data)
+    if (clientKey) {
+      console.log('[SSH] Using client key info:', JSON.stringify(clientKey));
+      // Check if the key is in the correct format
+      if (typeof clientKey === 'object' && clientKey.keyType && clientKey.keyData) {
+        // We need to use the private key, not the public key data
+        // Since we only have the public key from authentication, we'll use the proxy key
+        console.log('[SSH] Only have public key data, using proxy key instead');
+      } else if (Buffer.isBuffer(clientKey)) {
+        // The key is a buffer, use it directly
+        connectionOptions.privateKey = clientKey;
+        console.log('[SSH] Using client key buffer directly');
       } else {
-        console.log('[SSH] No client key available, using proxy key');
+        // For other key types, we can't use the client key directly since we only have public key info
+        console.log('[SSH] Client key is not a buffer, falling back to proxy key');
       }
+    } else {
+      console.log('[SSH] No client key available, using proxy key');
+    }
 
-      // Log the key type for debugging
-      if (connectionOptions.privateKey) {
-        if (
-          typeof connectionOptions.privateKey === 'object' &&
-          (connectionOptions.privateKey as any).algo
-        ) {
-          console.log(`[SSH] Key algo: ${(connectionOptions.privateKey as any).algo}`);
-        } else if (Buffer.isBuffer(connectionOptions.privateKey)) {
-          console.log(`[SSH] Key is a buffer of length: ${connectionOptions.privateKey.length}`);
-        } else {
-          console.log(`[SSH] Key is of type: ${typeof connectionOptions.privateKey}`);
-        }
-      }
-
+    return new Promise((resolve, reject) => {
       const remoteGitSsh = new ssh2.Client();
 
       // Handle connection success

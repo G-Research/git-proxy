@@ -1,0 +1,23 @@
+services:
+  git-proxy:
+    # Build the image from the Dockerfile in the current directory
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Name the image
+    image: finos/git-proxy
+    # Name the container for easy access
+    container_name: git-proxy-server
+    # Map ports for the web UI and SSH server
+    ports:
+      - '8000:8000'
+      - '2222:2222'
+      - '3000:3000'
+    # Use volumes to persist data and allow for easy configuration
+    volumes:
+      # Persist the database, SSH host keys, and other application data
+      - ./git-proxy-data:/usr/src/app/.data
+      # Mount the config file to allow changes without rebuilding the image
+      - ./proxy.config.docker.json:/usr/src/app/proxy.config.json:ro
+    # Restart the container automatically if it stops
+    restart: unless-stopped

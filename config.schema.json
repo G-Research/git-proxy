@@ -92,6 +92,17 @@
       "required": ["windowMs", "limit"],
       "additionalProperties": false
     },
+    "limits": {
+      "description": "Various limits for the proxy.",
+      "type": "object",
+      "properties": {
+        "maxPackSizeBytes": {
+          "type": "number",
+          "description": "Maximum size of a git packfile in bytes."
+        }
+      },
+      "additionalProperties": false
+    },
     "privateOrganizations": {
       "description": "Pattern searches for listed private organizations are disabled",
       "type": "array"

@@ -1,0 +1,44 @@
+{
+  "cookieSecret": "a-very-secret-cookie-secret-for-docker",
+  "proxyUrl": "https://github.com",
+  "sessionMaxAgeHours": 12,
+  "rateLimit": {
+    "windowMs": 60000,
+    "limit": 1000
+  },
+  "authorisedList": [
+    {
+      "project": "dcoric",
+      "name": "git-proxy",
+      "url": "https://github.com/dcoric/git-proxy.git"
+    }
+  ],
+  "authentication": [
+    {
+      "type": "local",
+      "enabled": true
+    }
+  ],
+  "sink": [
+    {
+      "type": "fs",
+      "params": {
+        "filepath": "./.data"
+      },
+      "enabled": true
+    }
+  ],
+  "ssh": {
+    "enabled": true,
+    "port": 2222,
+    "hostKey": {
+      "privateKeyPath": ".data/ssh/host_key",
+      "publicKeyPath": ".data/ssh/host_key.pub"
+    }
+  },
+  "tls": {
+    "enabled": false,
+    "key": "certs/key.pem",
+    "cert": "certs/cert.pem"
+  }
+}
