@@ -1,15 +1,13 @@
-import express, { Request, Response } from 'express';
-import { utils } from 'ssh2';
-import crypto from 'crypto';
-
-import * as db from '../../db';
-import { toPublicUser } from './publicApi';
-
-const router = express.Router();
+const express = require('express');
+const router = new express.Router();
+const db = require('../../db');
+const { toPublicUser } = require('./publicApi');
+const { utils } = require('ssh2');
+const crypto = require('crypto');
 
 // Calculate SHA-256 fingerprint from SSH public key
 // Note: This function is duplicated in src/cli/ssh-key.ts to keep CLI and server independent
-function calculateFingerprint(publicKeyStr: string): string | null {
+function calculateFingerprint(publicKeyStr) {
   try {
     const parsed = utils.parseKey(publicKeyStr);
     if (!parsed || parsed instanceof Error) {
@@ -24,35 +22,30 @@ function calculateFingerprint(publicKeyStr: string): string | null {
   }
 }
 
-router.get('/', async (req: Request, res: Response) => {
-  console.log('fetching users');
-  const users = await db.getUsers();
+router.get('/', async (req, res) => {
+  console.log(`fetching users`);
+  const users = await db.getUsers({});
   res.send(users.map(toPublicUser));
 });
 
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', async (req, res) => {
   const username = req.params.id.toLowerCase();
   console.log(`Retrieving details for user: ${username}`);
   const user = await db.findUser(username);
-  if (!user) {
-    res.status(404).send('Error: User not found').end();
-    return;
-  }
   res.send(toPublicUser(user));
 });
 
 // Get SSH key fingerprints for a user
-router.get('/:username/ssh-key-fingerprints', async (req: Request, res: Response) => {
+router.get('/:username/ssh-key-fingerprints', async (req, res) => {
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required' });
     return;
   }
 
-  const { username, admin } = req.user as { username: string; admin: boolean };
   const targetUsername = req.params.username.toLowerCase();
 
   // Only allow users to view their own keys, or admins to view any keys
-  if (username !== targetUsername && !admin) {
+  if (req.user.username !== targetUsername && !req.user.admin) {
     res.status(403).json({ error: 'Not authorized to view keys for this user' });
     return;
   }
@@ -72,17 +65,16 @@ router.get('/:username/ssh-key-fingerprints', async (req: Request, res: Response
 });
 
 // Add SSH public key
-router.post('/:username/ssh-keys', async (req: Request, res: Response) => {
+router.post('/:username/ssh-keys', async (req, res) => {
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required' });
     return;
   }
 
-  const { username, admin } = req.user as { username: string; admin: boolean };
   const targetUsername = req.params.username.toLowerCase();
 
   // Only allow users to add keys to their own account, or admins to add to any account
-  if (username !== targetUsername && !admin) {
+  if (req.user.username !== targetUsername && !req.user.admin) {
     res.status(403).json({ error: 'Not authorized to add keys for this user' });
     return;
   }
@@ -117,7 +109,7 @@ router.post('/:username/ssh-keys', async (req: Request, res: Response) => {
       message: 'SSH key added successfully',
       fingerprint: fingerprint,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error adding SSH key:', error);
 
     // Return specific error message
@@ -132,36 +124,37 @@ router.post('/:username/ssh-keys', async (req: Request, res: Response) => {
 });
 
 // Remove SSH public key by fingerprint
-router.delete('/:username/ssh-keys/:fingerprint', async (req: Request, res: Response) => {
+router.delete('/:username/ssh-keys/:fingerprint', async (req, res) => {
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required' });
     return;
   }
 
-  const { username, admin } = req.user as { username: string; admin: boolean };
   const targetUsername = req.params.username.toLowerCase();
   const fingerprint = req.params.fingerprint;
 
   // Only allow users to remove keys from their own account, or admins to remove from any account
-  if (username !== targetUsername && !admin) {
+  if (req.user.username !== targetUsername && !req.user.admin) {
     res.status(403).json({ error: 'Not authorized to remove keys for this user' });
     return;
   }
 
-  console.log('Removing SSH key', { targetUsername, fingerprint });
+  if (!fingerprint) {
+    res.status(400).json({ error: 'Fingerprint is required' });
+    return;
+  }
+
   try {
     await db.removePublicKey(targetUsername, fingerprint);
     res.status(200).json({ message: 'SSH key removed successfully' });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error removing SSH key:', error);
-
-    // Return specific error message
     if (error.message === 'User not found') {
       res.status(404).json({ error: 'User not found' });
     } else {
-      res.status(500).json({ error: error.message || 'Failed to remove SSH key' });
+      res.status(500).json({ error: 'Failed to remove SSH key' });
     }
   }
 });
 
-export default router;
+module.exports = router;
