@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createRepo,
   getRepo,
@@ -12,9 +12,11 @@ import {
   deleteRepo,
 } from '../../../src/db/mongo/repo';
 import { Repo } from '../../../src/db/types';
-import { mongoAvailable } from '../../setup-integration';
 
-describe.runIf(mongoAvailable)('MongoDB Repo Integration Tests', () => {
+// Only run in CI where MongoDB is available, or when explicitly enabled locally
+const shouldRunMongoTests = process.env.CI === 'true' || process.env.RUN_MONGO_TESTS === 'true';
+
+describe.runIf(shouldRunMongoTests)('MongoDB Repo Integration Tests', () => {
   const createTestRepo = (overrides: Partial<Repo> = {}): Repo => {
     return new Repo(
       overrides.project || 'test-project',

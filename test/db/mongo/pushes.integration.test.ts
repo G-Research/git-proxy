@@ -9,9 +9,11 @@ import {
   cancel,
 } from '../../../src/db/mongo/pushes';
 import { Action } from '../../../src/proxy/actions';
-import { mongoAvailable } from '../../setup-integration';
 
-describe.runIf(mongoAvailable)('MongoDB Pushes Integration Tests', () => {
+// Only run in CI where MongoDB is available, or when explicitly enabled locally
+const shouldRunMongoTests = process.env.CI === 'true' || process.env.RUN_MONGO_TESTS === 'true';
+
+describe.runIf(shouldRunMongoTests)('MongoDB Pushes Integration Tests', () => {
   const createTestAction = (overrides: Partial<Action> = {}): Action => {
     const timestamp = Date.now();
     const action = new Action(

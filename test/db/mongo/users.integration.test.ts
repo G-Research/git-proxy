@@ -9,9 +9,11 @@ import {
   deleteUser,
 } from '../../../src/db/mongo/users';
 import { User } from '../../../src/db/types';
-import { mongoAvailable } from '../../setup-integration';
 
-describe.runIf(mongoAvailable)('MongoDB Users Integration Tests', () => {
+// Only run in CI where MongoDB is available, or when explicitly enabled locally
+const shouldRunMongoTests = process.env.CI === 'true' || process.env.RUN_MONGO_TESTS === 'true';
+
+describe.runIf(shouldRunMongoTests)('MongoDB Users Integration Tests', () => {
   const createTestUser = (overrides: Partial<User> = {}): User => {
     const timestamp = Date.now();
     return new User(

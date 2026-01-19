@@ -3,36 +3,55 @@ import { MongoClient } from 'mongodb';
 import { resetConnection } from '../src/db/mongo/helper';
 import { invalidateCache } from '../src/config';
 
-const TEST_DB_NAME = 'git-proxy-test';
+const DEFAULT_TEST_DB_NAME = 'git-proxy-test';
 const COLLECTIONS = ['repos', 'users', 'pushes', 'user_session'];
 
 let client: MongoClient | null = null;
-let mongoAvailable = false;
+
+const getTestDbName = (connectionString: string): string => {
+  try {
+    const url = new URL(connectionString);
+    const dbName = url.pathname.replace(/^\//, '');
+    return dbName || DEFAULT_TEST_DB_NAME;
+  } catch {
+    return DEFAULT_TEST_DB_NAME;
+  }
+};
 
 beforeAll(async () => {
   const connectionString =
-    process.env.GIT_PROXY_MONGO_CONNECTION_STRING || 'mongodb://localhost:27017/git-proxy-test';
+    process.env.GIT_PROXY_MONGO_CONNECTION_STRING ||
+    `mongodb://localhost:27017/${DEFAULT_TEST_DB_NAME}`;
+  const testDbName = getTestDbName(connectionString);
 
-  // Try to connect to MongoDB - if unavailable, MongoDB-specific tests will be skipped
-  try {
-    client = new MongoClient(connectionString, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
-    await client.connect();
-    mongoAvailable = true;
-    console.log('MongoDB connection established for integration tests');
-  } catch (error) {
-    console.warn('MongoDB not available - MongoDB integration tests will be skipped');
-    console.warn('Connection string:', connectionString);
-    // Don't throw - allow non-MongoDB integration tests to run
+  // Connect to MongoDB for test cleanup
+  // In CI, MongoDB should always be available
+  // Locally, tests are skipped unless RUN_MONGO_TESTS=true
+  const shouldConnect = process.env.CI === 'true' || process.env.RUN_MONGO_TESTS === 'true';
+
+  if (shouldConnect) {
+    try {
+      client = new MongoClient(connectionString, {
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
+      });
+      await client.connect();
+      console.log(`MongoDB connection established for integration tests (${testDbName})`);
+    } catch (error) {
+      console.error('Failed to connect to MongoDB:', error);
+      throw error; // Fail fast in CI if MongoDB isn't available
+    }
   }
 });
 
 afterEach(async () => {
-  // Clean up test data after each test (only if MongoDB is available)
-  if (client && mongoAvailable) {
-    const db = client.db(TEST_DB_NAME);
+  // Clean up test data after each test
+  if (client) {
+    const dbName = getTestDbName(
+      process.env.GIT_PROXY_MONGO_CONNECTION_STRING ||
+        `mongodb://localhost:27017/${DEFAULT_TEST_DB_NAME}`,
+    );
+    const db = client.db(dbName);
     for (const collection of COLLECTIONS) {
       try {
         await db.collection(collection).deleteMany({});
@@ -59,10 +78,14 @@ afterAll(async () => {
     // Ignore if connection wasn't established
   }
 
-  if (client && mongoAvailable) {
+  if (client) {
     // Drop test database
     try {
-      await client.db(TEST_DB_NAME).dropDatabase();
+      const dbName = getTestDbName(
+        process.env.GIT_PROXY_MONGO_CONNECTION_STRING ||
+          `mongodb://localhost:27017/${DEFAULT_TEST_DB_NAME}`,
+      );
+      await client.db(dbName).dropDatabase();
     } catch {
       // Ignore if database doesn't exist
     }
@@ -72,6 +95,3 @@ afterAll(async () => {
 
   console.log('MongoDB integration test cleanup complete');
 });
-
-// Export for tests that need to check MongoDB availability
-export { mongoAvailable };

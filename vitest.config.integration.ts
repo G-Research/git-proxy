@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -14,6 +15,8 @@ export default defineConfig({
     },
     env: {
       NODE_ENV: 'test',
+      // Use integration config with MongoDB enabled
+      CONFIG_FILE: path.resolve(__dirname, 'test-integration.proxy.config.json'),
       GIT_PROXY_MONGO_CONNECTION_STRING: 'mongodb://localhost:27017/git-proxy-test',
     },
   },
