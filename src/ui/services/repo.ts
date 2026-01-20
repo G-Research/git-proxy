@@ -1,20 +1,20 @@
 import axios from 'axios';
 import { getAxiosConfig, processAuthError } from './auth.js';
-import { API_BASE } from '../apiBase';
-import { RepositoryData, RepositoryDataWithId } from '../views/RepoList/Components/NewRepo';
+import { Repo } from '../../db/types';
+import { RepoView } from '../types';
+import { getApiV1BaseUrl } from './apiConfig';
 
-const API_V1_BASE = `${API_BASE}/api/v1`;
-
-const canAddUser = (repoId: string, user: string, action: string) => {
-  const url = new URL(`${API_V1_BASE}/repo/${repoId}`);
+const canAddUser = async (repoId: string, user: string, action: string) => {
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = new URL(`${apiV1Base}/repo/${repoId}`);
   return axios
-    .get(url.toString(), getAxiosConfig())
+    .get<Repo>(url.toString(), getAxiosConfig())
     .then((response) => {
-      const data = response.data;
+      const repo = response.data;
       if (action === 'authorise') {
-        return !data.users.canAuthorise.includes(user);
+        return !repo.users.canAuthorise.includes(user);
       } else {
-        return !data.users.canPush.includes(user);
+        return !repo.users.canPush.includes(user);
       }
     })
     .catch((error: any) => {
@@ -31,21 +31,22 @@ class DupUserValidationError extends Error {
 
 const getRepos = async (
   setIsLoading: (isLoading: boolean) => void,
-  setData: (data: any) => void,
+  setRepos: (repos: RepoView[]) => void,
   setAuth: (auth: boolean) => void,
   setIsError: (isError: boolean) => void,
   setErrorMessage: (errorMessage: string) => void,
   query: Record<string, boolean> = {},
 ): Promise<void> => {
-  const url = new URL(`${API_V1_BASE}/repo`);
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = new URL(`${apiV1Base}/repo`);
   url.search = new URLSearchParams(query as any).toString();
   setIsLoading(true);
-  await axios(url.toString(), getAxiosConfig())
+  await axios<RepoView[]>(url.toString(), getAxiosConfig())
     .then((response) => {
-      const sortedRepos = response.data.sort((a: RepositoryData, b: RepositoryData) =>
+      const sortedRepos = response.data.sort((a: RepoView, b: RepoView) =>
         a.name.localeCompare(b.name),
       );
-      setData(sortedRepos);
+      setRepos(sortedRepos);
     })
     .catch((error: any) => {
       setIsError(true);
@@ -63,17 +64,18 @@ const getRepos = async (
 
 const getRepo = async (
   setIsLoading: (isLoading: boolean) => void,
-  setData: (data: any) => void,
+  setRepo: (repo: RepoView) => void,
   setAuth: (auth: boolean) => void,
   setIsError: (isError: boolean) => void,
   id: string,
 ): Promise<void> => {
-  const url = new URL(`${API_V1_BASE}/repo/${id}`);
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = new URL(`${apiV1Base}/repo/${id}`);
   setIsLoading(true);
-  await axios(url.toString(), getAxiosConfig())
+  await axios<RepoView>(url.toString(), getAxiosConfig())
     .then((response) => {
-      const data = response.data;
-      setData(data);
+      const repo = response.data;
+      setRepo(repo);
     })
     .catch((error: any) => {
       if (error.response && error.response.status === 401) {
@@ -88,12 +90,13 @@ const getRepo = async (
 };
 
 const addRepo = async (
-  data: RepositoryData,
-): Promise<{ success: boolean; message?: string; repo: RepositoryDataWithId | null }> => {
-  const url = new URL(`${API_V1_BASE}/repo`);
+  repo: RepoView,
+): Promise<{ success: boolean; message?: string; repo: RepoView | null }> => {
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = new URL(`${apiV1Base}/repo`);
 
   try {
-    const response = await axios.post(url.toString(), data, getAxiosConfig());
+    const response = await axios.post<RepoView>(url.toString(), repo, getAxiosConfig());
     return {
       success: true,
       repo: response.data,
@@ -110,7 +113,8 @@ const addRepo = async (
 const addUser = async (repoId: string, user: string, action: string): Promise<void> => {
   const canAdd = await canAddUser(repoId, user, action);
   if (canAdd) {
-    const url = new URL(`${API_V1_BASE}/repo/${repoId}/user/${action}`);
+    const apiV1Base = await getApiV1BaseUrl();
+    const url = new URL(`${apiV1Base}/repo/${repoId}/user/${action}`);
     const data = { username: user };
     await axios.patch(url.toString(), data, getAxiosConfig()).catch((error: any) => {
       console.log(error.response.data.message);
@@ -123,7 +127,8 @@ const addUser = async (repoId: string, user: string, action: string): Promise<vo
 };
 
 const deleteUser = async (user: string, repoId: string, action: string): Promise<void> => {
-  const url = new URL(`${API_V1_BASE}/repo/${repoId}/user/${action}/${user}`);
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = new URL(`${apiV1Base}/repo/${repoId}/user/${action}/${user}`);
 
   await axios.delete(url.toString(), getAxiosConfig()).catch((error: any) => {
     console.log(error.response.data.message);
@@ -132,7 +137,8 @@ const deleteUser = async (user: string, repoId: string, action: string): Promise
 };
 
 const deleteRepo = async (repoId: string): Promise<void> => {
-  const url = new URL(`${API_V1_BASE}/repo/${repoId}/delete`);
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = new URL(`${apiV1Base}/repo/${repoId}/delete`);
 
   await axios.delete(url.toString(), getAxiosConfig()).catch((error: any) => {
     console.log(error.response.data.message);

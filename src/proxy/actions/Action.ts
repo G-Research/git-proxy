@@ -1,20 +1,6 @@
 import { processGitURLForNameAndOrg, processUrlPath } from '../routes/helper';
 import { Step } from './Step';
-
-/**
- * Represents a commit.
- */
-export interface Commit {
-  message: string;
-  committer: string;
-  committerEmail: string;
-  tree: string;
-  parent: string;
-  author: string;
-  authorEmail: string;
-  commitTS?: string; // TODO: Normalize this to commitTimestamp
-  commitTimestamp?: string;
-}
+import { Attestation, CommitData } from '../processors/types';
 
 /**
  * Class representing a Push.
@@ -39,7 +25,7 @@ class Action {
   rejected: boolean = false;
   autoApproved: boolean = false;
   autoRejected: boolean = false;
-  commitData?: Commit[] = [];
+  commitData?: CommitData[] = [];
   commitFrom?: string;
   commitTo?: string;
   branch?: string;
@@ -47,7 +33,7 @@ class Action {
   author?: string;
   user?: string;
   userEmail?: string;
-  attestation?: string;
+  attestation?: Attestation;
   lastStep?: Step;
   proxyGitPath?: string;
   newIdxFiles?: string[];
@@ -61,7 +47,12 @@ class Action {
       keyData: Buffer;
     };
   };
-  pullAuthStrategy?: 'basic' | 'ssh-user-key' | 'ssh-service-token' | 'anonymous';
+  pullAuthStrategy?:
+    | 'basic'
+    | 'ssh-user-key'
+    | 'ssh-service-token'
+    | 'ssh-agent-forwarding'
+    | 'anonymous';
   encryptedSSHKey?: string;
   sshKeyExpiry?: Date;
 

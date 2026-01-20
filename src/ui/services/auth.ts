@@ -1,7 +1,7 @@
 import { getCookie } from '../utils';
-import { UserData } from '../../types/models';
-import { API_BASE } from '../apiBase';
+import { PublicUser } from '../../db/types';
 import { AxiosError } from 'axios';
+import { getBaseUrl } from './apiConfig';
 
 interface AxiosConfig {
   withCredentials: boolean;
@@ -14,9 +14,10 @@ interface AxiosConfig {
 /**
  * Gets the current user's information
  */
-export const getUserInfo = async (): Promise<UserData | null> => {
+export const getUserInfo = async (): Promise<PublicUser | null> => {
   try {
-    const response = await fetch(`${API_BASE}/api/auth/me`, {
+    const baseUrl = await getBaseUrl();
+    const response = await fetch(`${baseUrl}/api/auth/profile`, {
       credentials: 'include', // Sends cookies
     });
     if (!response.ok) throw new Error(`Failed to fetch user info: ${response.statusText}`);
@@ -45,12 +46,12 @@ export const getAxiosConfig = (): AxiosConfig => {
  * Processes authentication errors and returns a user-friendly error message
  */
 export const processAuthError = (error: AxiosError<any>, jwtAuthEnabled = false): string => {
-  let errorMessage = `Failed to authorize user: ${error.response?.data?.trim() ?? ''}. `;
+  const errorMessage = (error.response?.data as any)?.message ?? 'Unknown error';
+  let msg = `Failed to authorize user: ${errorMessage.trim()}. `;
   if (jwtAuthEnabled && !localStorage.getItem('ui_jwt_token')) {
-    errorMessage +=
-      'Set your JWT token in the settings page or disable JWT auth in your app configuration.';
+    msg += 'Set your JWT token in the settings page or disable JWT auth in your app configuration.';
   } else {
-    errorMessage += 'Check your JWT token or disable JWT auth in your app configuration.';
+    msg += 'Check your JWT token or disable JWT auth in your app configuration.';
   }
-  return errorMessage;
+  return msg;
 };

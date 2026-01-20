@@ -16,9 +16,8 @@ import { AccountCircle } from '@material-ui/icons';
 import { getUser } from '../../services/user';
 import axios from 'axios';
 import { getAxiosConfig } from '../../services/auth';
-import { UserData } from '../../../types/models';
-
-import { API_BASE } from '../../apiBase';
+import { PublicUser } from '../../../db/types';
+import { getBaseUrl } from '../../services/apiConfig';
 
 const useStyles = makeStyles(styles);
 
@@ -28,11 +27,11 @@ const DashboardNavbarLinks: React.FC = () => {
   const [openProfile, setOpenProfile] = useState<HTMLElement | null>(null);
   const [, setAuth] = useState<boolean>(true);
   const [, setIsLoading] = useState<boolean>(true);
-  const [, setIsError] = useState<boolean>(false);
-  const [data, setData] = useState<UserData | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [user, setUser] = useState<PublicUser | null>(null);
 
   useEffect(() => {
-    getUser(setIsLoading, setData, setAuth, setIsError);
+    getUser(setIsLoading, setUser, setAuth, setErrorMessage);
   }, []);
 
   const handleClickProfile = (event: React.MouseEvent<HTMLElement>) => {
@@ -53,7 +52,8 @@ const DashboardNavbarLinks: React.FC = () => {
 
   const logout = async () => {
     try {
-      const { data } = await axios.post(`${API_BASE}/api/auth/logout`, {}, getAxiosConfig());
+      const baseUrl = await getBaseUrl();
+      const { data } = await axios.post(`${baseUrl}/api/auth/logout`, {}, getAxiosConfig());
 
       if (!data.isAuth && !data.user) {
         setAuth(false);
@@ -66,6 +66,7 @@ const DashboardNavbarLinks: React.FC = () => {
 
   return (
     <div>
+      {errorMessage && <div className={classes.errorMessage}>{errorMessage}</div>}
       <div className={classes.manager}>
         <Button
           color={window.innerWidth > 959 ? 'transparent' : 'white'}
@@ -99,10 +100,10 @@ const DashboardNavbarLinks: React.FC = () => {
                 <ClickAwayListener onClickAway={handleCloseProfile}>
                   <MenuList role='menu'>
                     <MenuItem onClick={showProfile} className={classes.dropdownItem}>
-                      {data ? 'My Account' : 'Login'}
+                      {user ? 'My Account' : 'Login'}
                     </MenuItem>
-                    {!!data && <Divider light />}
-                    {!!data && (
+                    {!!user && <Divider light />}
+                    {!!user && (
                       <MenuItem onClick={logout} className={classes.dropdownItem}>
                         Logout
                       </MenuItem>
