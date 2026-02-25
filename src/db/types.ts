@@ -29,6 +29,13 @@ export type QueryValue = string | boolean | number | undefined;
 
 export type UserRole = 'canPush' | 'canAuthorise';
 
+export type PublicKeyRecord = {
+  key: string;
+  name: string;
+  addedAt: string;
+  fingerprint: string;
+};
+
 export class Repo {
   project: string;
   name: string;
@@ -58,7 +65,7 @@ export class User {
   email: string;
   admin: boolean;
   oidcId?: string | null;
-  publicKeys?: string[];
+  publicKeys?: PublicKeyRecord[];
   displayName?: string | null;
   title?: string | null;
   _id?: string;
@@ -70,7 +77,7 @@ export class User {
     email: string,
     admin: boolean,
     oidcId: string | null = null,
-    publicKeys: string[] = [],
+    publicKeys: PublicKeyRecord[] = [],
     _id?: string,
   ) {
     this.username = username;
@@ -84,6 +91,15 @@ export class User {
   }
 }
 
+export interface PublicUser {
+  username: string;
+  displayName: string;
+  email: string;
+  title: string;
+  gitAccount: string;
+  admin: boolean;
+}
+
 export interface Sink {
   getSessionStore: () => MongoDBStore | undefined;
   getPushes: (query: Partial<PushQuery>) => Promise<Action[]>;
@@ -92,7 +108,7 @@ export interface Sink {
   deletePush: (id: string) => Promise<void>;
   authorise: (id: string, attestation: any) => Promise<{ message: string }>;
   cancel: (id: string) => Promise<{ message: string }>;
-  reject: (id: string, attestation: any) => Promise<{ message: string }>;
+  reject: (id: string, rejection: any) => Promise<{ message: string }>;
   getRepos: (query?: Partial<RepoQuery>) => Promise<Repo[]>;
   getRepo: (name: string) => Promise<Repo | null>;
   getRepoByUrl: (url: string) => Promise<Repo | null>;
@@ -111,6 +127,7 @@ export interface Sink {
   createUser: (user: User) => Promise<void>;
   deleteUser: (username: string) => Promise<void>;
   updateUser: (user: Partial<User>) => Promise<void>;
-  addPublicKey: (username: string, publicKey: string) => Promise<void>;
-  removePublicKey: (username: string, publicKey: string) => Promise<void>;
+  addPublicKey: (username: string, publicKey: PublicKeyRecord) => Promise<void>;
+  removePublicKey: (username: string, fingerprint: string) => Promise<void>;
+  getPublicKeys: (username: string) => Promise<PublicKeyRecord[]>;
 }

@@ -10,6 +10,7 @@ import {
   PACKET_SIZE,
   GIT_OBJECT_TYPE_COMMIT,
 } from '../constants';
+import { parsePacketLines } from '../pktLineParser';
 
 const dir = './.tmp/';
 
@@ -63,6 +64,8 @@ async function exec(req: any, action: Action): Promise<Action> {
     // Strip everything after NUL, which is cap-list from
     // https://git-scm.com/docs/http-protocol#_smart_server_response
     action.branch = ref.replace(/\0.*/, '').trim();
+
+    // Note this will change the action.id to be based on the commits
     action.setCommit(oldCommit, newCommit);
 
     // Check if the offset is valid and if there's data after it
@@ -90,10 +93,18 @@ async function exec(req: any, action: Action): Promise<Action> {
         action.commitFrom = action.commitData[action.commitData.length - 1].parent;
       }
 
-      const { committer, committerEmail } = action.commitData[action.commitData.length - 1];
-      console.log(`Push Request received from user ${committer} with email ${committerEmail}`);
-      action.user = committer;
-      action.userEmail = committerEmail;
+      if (req.user) {
+        console.log(
+          `Push Request received from user ${req.user.username} with email ${req.user.email}`,
+        );
+        action.user = req.user.username;
+        action.userEmail = req.user.email;
+      } else {
+        const { committer, committerEmail } = action.commitData[action.commitData.length - 1];
+        console.log(`Push Request received from user ${committer} with email ${committerEmail}`);
+        action.user = committer;
+        action.userEmail = committerEmail;
+      }
     }
 
     step.content = {
@@ -222,8 +233,6 @@ const getCommitData = (contents: CommitContent[]): CommitData[] => {
     .chain(contents)
     .filter({ type: GIT_OBJECT_TYPE_COMMIT })
     .map((x: CommitContent) => {
-      console.log({ x });
-
       const allLines = x.content.split('\n');
       let headerEndIndex = -1;
 
@@ -246,7 +255,6 @@ const getCommitData = (contents: CommitContent[]): CommitData[] => {
         .slice(headerEndIndex + 1)
         .join('\n')
         .trim();
-      console.log({ headerLines, message });
 
       const { tree, parents, author, committer } = getParsedData(headerLines);
       // No parent headers -> zero hash
@@ -533,43 +541,6 @@ const decompressGitObjects = async (buffer: Buffer): Promise<GitObject[]> => {
   return results;
 };
 
-/**
- * Parses the packet lines from a buffer into an array of strings.
- * Also returns the offset immediately following the parsed lines (including the flush packet).
- * @param {Buffer} buffer - The buffer containing the packet data.
- * @return {[string[], number]} An array containing the parsed lines and the offset after the last parsed line/flush packet.
- */
-const parsePacketLines = (buffer: Buffer): [string[], number] => {
-  const lines: string[] = [];
-  let offset = 0;
-
-  while (offset + PACKET_SIZE <= buffer.length) {
-    const lengthHex = buffer.toString('utf8', offset, offset + PACKET_SIZE);
-    const length = Number(`0x${lengthHex}`);
-
-    // Prevent non-hex characters from causing issues
-    if (isNaN(length) || length < 0) {
-      throw new Error(`Invalid packet line length ${lengthHex} at offset ${offset}`);
-    }
-
-    // length of 0 indicates flush packet (0000)
-    if (length === 0) {
-      offset += PACKET_SIZE; // Include length of the flush packet
-      break;
-    }
-
-    // Make sure we don't read past the end of the buffer
-    if (offset + length > buffer.length) {
-      throw new Error(`Invalid packet line length ${lengthHex} at offset ${offset}`);
-    }
-
-    const line = buffer.toString('utf8', offset + PACKET_SIZE, offset + length);
-    lines.push(line);
-    offset += length; // Move offset to the start of the next line's length prefix
-  }
-  return [lines, offset];
-};
-
 exec.displayName = 'parsePush.exec';
 
-export { exec, getCommitData, getContents, getPackMeta, parsePacketLines };
+export { exec, getCommitData, getContents, getPackMeta };

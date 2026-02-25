@@ -1,8 +1,9 @@
 import axios from 'axios';
+import { createPublicKey } from 'crypto';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
-import jwkToPem from 'jwk-to-pem';
 
-import { JwkKey, JwksResponse, JwtValidationResult, RoleMapping } from './types';
+import { JwkKey, JwksResponse, JwtValidationResult } from './types';
+import { RoleMapping } from '../../config/generated/config';
 
 /**
  * Obtain the JSON Web Key Set (JWKS) from the OIDC authority.
@@ -52,7 +53,10 @@ export async function validateJwt(
       throw new Error('No matching key found in JWKS');
     }
 
-    const pubKey = jwkToPem(jwk as any);
+    const pubKey = createPublicKey({
+      key: jwk,
+      format: 'jwk',
+    });
 
     const verifiedPayload = jwt.verify(token, pubKey, {
       algorithms: ['RS256'],
@@ -80,6 +84,14 @@ export async function validateJwt(
  * Assign roles to the user based on the role mappings provided in the jwtConfig.
  *
  * If no role mapping is provided, the user will not have any roles assigned (i.e. user.admin = false).
+ *
+ * For example, the following role mapping will assign the "admin" role to users whose "name" claim is "John Doe":
+ *
+ * {
+ *   "admin": {
+ *     "name": "John Doe"
+ *   }
+ * }
  * @param {RoleMapping} roleMapping the role mapping configuration
  * @param {JwtPayload} payload the JWT payload
  * @param {Record<string, any>} user the req.user object to assign roles to

@@ -1,79 +1,56 @@
 import axios from 'axios';
-import { getAxiosConfig, processAuthError } from './auth';
-import { API_BASE } from '../apiBase';
+import { getAxiosConfig } from './auth';
+import { getApiV1BaseUrl } from './apiConfig';
+import { Action, Step } from '../../proxy/actions';
+import { PushActionView } from '../types';
+import { ServiceResult, errorResult, successResult } from './errors';
 
-const API_V1_BASE = `${API_BASE}/api/v1`;
-
-const getPush = async (
-  id: string,
-  setIsLoading: (isLoading: boolean) => void,
-  setData: (data: any) => void,
-  setAuth: (auth: boolean) => void,
-  setIsError: (isError: boolean) => void,
-): Promise<void> => {
-  const url = `${API_V1_BASE}/push/${id}`;
-  setIsLoading(true);
+const getPush = async (id: string): Promise<ServiceResult<PushActionView>> => {
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = `${apiV1Base}/push/${id}`;
 
   try {
-    const response = await axios(url, getAxiosConfig());
-    const data = response.data;
-    data.diff = data.steps.find((x: any) => x.stepName === 'diff');
-    setData(data);
+    const response = await axios<Action>(url, getAxiosConfig());
+    const data: Action = response.data;
+    const actionView: PushActionView = {
+      ...data,
+      diff: data.steps.find((x: Step) => x.stepName === 'diff')!,
+    };
+    return successResult(actionView);
   } catch (error: any) {
-    if (error.response?.status === 401) setAuth(false);
-    else setIsError(true);
-  } finally {
-    setIsLoading(false);
+    return errorResult(error, 'Failed to load push');
   }
 };
 
 const getPushes = async (
-  setIsLoading: (isLoading: boolean) => void,
-  setData: (data: any) => void,
-  setAuth: (auth: boolean) => void,
-  setIsError: (isError: boolean) => void,
-  setErrorMessage: (errorMessage: string) => void,
   query = {
     blocked: true,
     canceled: false,
     authorised: false,
     rejected: false,
   },
-): Promise<void> => {
-  const url = new URL(`${API_V1_BASE}/push`);
+): Promise<ServiceResult<PushActionView[]>> => {
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = new URL(`${apiV1Base}/push`);
   url.search = new URLSearchParams(query as any).toString();
 
-  setIsLoading(true);
-
   try {
-    const response = await axios(url.toString(), getAxiosConfig());
-    setData(response.data);
+    const response = await axios<Action[]>(url.toString(), getAxiosConfig());
+    return successResult(response.data as unknown as PushActionView[]);
   } catch (error: any) {
-    setIsError(true);
-
-    if (error.response?.status === 401) {
-      setAuth(false);
-      setErrorMessage(processAuthError(error));
-    } else {
-      const message = error.response?.data?.message || error.message;
-      setErrorMessage(`Error fetching pushes: ${message}`);
-    }
-  } finally {
-    setIsLoading(false);
+    return errorResult(error, 'Failed to load pushes');
   }
 };
 
 const authorisePush = async (
   id: string,
-  setMessage: (message: string) => void,
-  setUserAllowedToApprove: (userAllowedToApprove: boolean) => void,
   attestation: Array<{ label: string; checked: boolean }>,
-): Promise<void> => {
-  const url = `${API_V1_BASE}/push/${id}/authorise`;
-  let errorMsg = '';
-  let isUserAllowedToApprove = true;
-  await axios
-    .post(
+): Promise<ServiceResult> => {
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = `${apiV1Base}/push/${id}/authorise`;
+
+  try {
+    await axios.post(
       url,
       {
         params: {
@@ -81,48 +58,35 @@ const authorisePush = async (
         },
       },
       getAxiosConfig(),
-    )
-    .catch((error: any) => {
-      if (error.response && error.response.status === 401) {
-        errorMsg = 'You are not authorised to approve...';
-        isUserAllowedToApprove = false;
-      }
-    });
-  setMessage(errorMsg);
-  setUserAllowedToApprove(isUserAllowedToApprove);
+    );
+    return successResult();
+  } catch (error: any) {
+    return errorResult(error, 'Failed to approve push request');
+  }
 };
 
-const rejectPush = async (
-  id: string,
-  setMessage: (message: string) => void,
-  setUserAllowedToReject: (userAllowedToReject: boolean) => void,
-): Promise<void> => {
-  const url = `${API_V1_BASE}/push/${id}/reject`;
-  let errorMsg = '';
-  let isUserAllowedToReject = true;
-  await axios.post(url, {}, getAxiosConfig()).catch((error: any) => {
-    if (error.response && error.response.status === 401) {
-      errorMsg = 'You are not authorised to reject...';
-      isUserAllowedToReject = false;
-    }
-  });
-  setMessage(errorMsg);
-  setUserAllowedToReject(isUserAllowedToReject);
+const rejectPush = async (id: string, reason?: string): Promise<ServiceResult> => {
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = `${apiV1Base}/push/${id}/reject`;
+
+  try {
+    await axios.post(url, { reason }, getAxiosConfig());
+    return successResult();
+  } catch (error: any) {
+    return errorResult(error, 'Failed to reject push request');
+  }
 };
 
-const cancelPush = async (
-  id: string,
-  setAuth: (auth: boolean) => void,
-  setIsError: (isError: boolean) => void,
-): Promise<void> => {
-  const url = `${API_BASE}/push/${id}/cancel`;
-  await axios.post(url, {}, getAxiosConfig()).catch((error: any) => {
-    if (error.response && error.response.status === 401) {
-      setAuth(false);
-    } else {
-      setIsError(true);
-    }
-  });
+const cancelPush = async (id: string): Promise<ServiceResult> => {
+  const apiV1Base = await getApiV1BaseUrl();
+  const url = `${apiV1Base}/push/${id}/cancel`;
+
+  try {
+    await axios.post(url, {}, getAxiosConfig());
+    return successResult();
+  } catch (error: any) {
+    return errorResult(error, 'Failed to cancel push request');
+  }
 };
 
 export { getPush, getPushes, authorisePush, rejectPush, cancelPush };

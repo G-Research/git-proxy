@@ -3,7 +3,7 @@
   "sessionMaxAgeHours": 12,
   "rateLimit": {
     "windowMs": 60000,
-    "limit": 150
+    "limit": 1000
   },
   "tempPassword": {
     "sendEmail": false,
@@ -22,9 +22,6 @@
   "sink": [
     {
       "type": "fs",
-      "params": {
-        "filepath": "./."
-      },
       "enabled": true
     },
     {
@@ -184,16 +181,6 @@
   },
   "ssh": {
     "enabled": false,
-    "port": 2222,
-    "hostKey": {
-      "privateKeyPath": "test/.ssh/host_key",
-      "publicKeyPath": "test/.ssh/host_key.pub"
-    },
-    "clone": {
-      "serviceToken": {
-        "username": "",
-        "password": ""
-      }
-    }
+    "port": 2222
   }
 }

@@ -1,35 +1,39 @@
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { getAxiosConfig, processAuthError } from './auth';
-import { UserData } from '../../types/models';
-
-import { API_BASE } from '../apiBase';
+import { PublicUser } from '../../db/types';
+import { getBaseUrl, getApiV1BaseUrl } from './apiConfig';
+import { getServiceError, formatErrorMessage } from './errors';
 
 type SetStateCallback<T> = (value: T | ((prevValue: T) => T)) => void;
 
 const getUser = async (
   setIsLoading?: SetStateCallback<boolean>,
-  setData?: (userData: UserData) => void,
+  setUser?: (user: PublicUser) => void,
   setAuth?: SetStateCallback<boolean>,
-  setIsError?: SetStateCallback<boolean>,
+  setErrorMessage?: SetStateCallback<string>,
   id: string | null = null,
 ): Promise<void> => {
-  let url = `${API_BASE}/api/auth/profile`;
+  const baseUrl = await getBaseUrl();
+  const apiV1BaseUrl = await getApiV1BaseUrl();
+
+  let url = `${baseUrl}/api/auth/profile`;
   if (id) {
-    url = `${API_BASE}/api/v1/user/${id}`;
+    url = `${apiV1BaseUrl}/user/${id}`;
   }
 
   try {
-    const response: AxiosResponse<UserData> = await axios(url, getAxiosConfig());
-    const data = response.data;
+    const response: AxiosResponse<PublicUser> = await axios(url, getAxiosConfig());
+    const user = response.data;
 
-    setData?.(data);
+    setUser?.(user);
     setIsLoading?.(false);
   } catch (error) {
-    const axiosError = error as AxiosError;
-    if (axiosError.response?.status === 401) {
+    const { status, message } = getServiceError(error, 'Unknown error');
+    if (status === 401) {
       setAuth?.(false);
+      setErrorMessage?.(processAuthError(error as AxiosError));
     } else {
-      setIsError?.(true);
+      setErrorMessage?.(formatErrorMessage('Error fetching user', status, message));
     }
     setIsLoading?.(false);
   }
@@ -37,45 +41,44 @@ const getUser = async (
 
 const getUsers = async (
   setIsLoading: SetStateCallback<boolean>,
-  setData: SetStateCallback<UserData[]>,
+  setUsers: SetStateCallback<PublicUser[]>,
   setAuth: SetStateCallback<boolean>,
   setErrorMessage: SetStateCallback<string>,
 ): Promise<void> => {
   setIsLoading(true);
 
   try {
-    const response: AxiosResponse<UserData[]> = await axios(
-      `${API_BASE}/api/v1/user`,
+    const apiV1BaseUrl = await getApiV1BaseUrl();
+    const response: AxiosResponse<PublicUser[]> = await axios(
+      `${apiV1BaseUrl}/user`,
       getAxiosConfig(),
     );
-    setData(response.data);
+    setUsers(response.data);
   } catch (error) {
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 401) {
-        setAuth(false);
-        setErrorMessage(processAuthError(error));
-      } else {
-        const msg = (error.response?.data as any)?.message ?? error.message;
-        setErrorMessage(`Error fetching users: ${msg}`);
-      }
+    const { status, message } = getServiceError(error, 'Unknown error');
+    if (status === 401) {
+      setAuth(false);
+      setErrorMessage(processAuthError(error as AxiosError));
     } else {
-      setErrorMessage(`Error fetching users: ${(error as Error).message ?? 'Unknown error'}`);
+      setErrorMessage(formatErrorMessage('Error fetching users', status, message));
     }
   } finally {
     setIsLoading(false);
   }
 };
 
-const updateUser = async (data: UserData): Promise<void> => {
-  console.log(data);
+const updateUser = async (
+  user: PublicUser,
+  setErrorMessage: SetStateCallback<string>,
+  setIsLoading: SetStateCallback<boolean>,
+): Promise<void> => {
   try {
-    await axios.post(`${API_BASE}/api/auth/gitAccount`, data, getAxiosConfig());
+    const baseUrl = await getBaseUrl();
+    await axios.post(`${baseUrl}/api/auth/gitAccount`, user, getAxiosConfig());
   } catch (error) {
-    const axiosError = error as AxiosError;
-    if (axiosError.response) {
-      console.log((axiosError.response.data as any).message);
-    }
-    throw error;
+    const { status, message } = getServiceError(error, 'Unknown error');
+    setErrorMessage(formatErrorMessage('Error updating user', status, message));
+    setIsLoading(false);
   }
 };
 

@@ -32,7 +32,7 @@
         },
         "gitleaks": {
           "type": "object",
-          "description": "Configuration for the gitleaks (https://github.com/gitleaks/gitleaks) plugin",
+          "description": "Configuration for the gitleaks [https://github.com/gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) plugin",
           "properties": {
             "enabled": { "type": "boolean" },
             "ignoreGitleaksAllow": { "type": "boolean" },
@@ -192,11 +192,21 @@
                 "additionalProperties": false,
                 "properties": {
                   "text": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Tooltip text"
                   },
                   "links": {
                     "type": "array",
-                    "items": { "type": "string", "format": "url" }
+                    "description": "An array of links to display under the tooltip text, providing additional context about the question",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "text": { "type": "string", "description": "Link text" },
+                        "url": { "type": "string", "format": "url", "description": "Link URL" }
+                      },
+                      "required": ["text", "url"]
+                    }
                   }
                 },
                 "required": ["text"]
@@ -369,34 +379,21 @@
       }
     },
     "ssh": {
-      "description": "SSH proxy server configuration",
+      "description": "SSH proxy server configuration. The proxy uses SSH agent forwarding to authenticate with remote Git servers (GitHub, GitLab, etc.) using the client's SSH keys. The proxy's own host key is auto-generated and only used to identify the proxy to connecting clients.",
       "type": "object",
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Enable SSH proxy server"
+          "description": "Enable SSH proxy server. When enabled, clients can connect via SSH and the proxy will forward their SSH agent to authenticate with remote Git servers."
         },
         "port": {
           "type": "number",
-          "description": "Port for SSH proxy server to listen on",
+          "description": "Port for SSH proxy server to listen on. Clients connect to this port instead of directly to GitHub/GitLab.",
           "default": 2222
         },
-        "hostKey": {
-          "type": "object",
-          "description": "SSH host key configuration",
-          "properties": {
-            "privateKeyPath": {
-              "type": "string",
-              "description": "Path to private SSH host key",
-              "default": "./.ssh/host_key"
-            },
-            "publicKeyPath": {
-              "type": "string",
-              "description": "Path to public SSH host key",
-              "default": "./.ssh/host_key.pub"
-            }
-          },
-          "required": ["privateKeyPath", "publicKeyPath"]
+        "agentForwardingErrorMessage": {
+          "type": "string",
+          "description": "Custom error message shown when SSH agent forwarding is not enabled or no keys are loaded in the client's SSH agent. If not specified, a default message with git config commands will be shown. This allows organizations to customize instructions based on their security policies."
         }
       },
       "required": ["enabled"]
@@ -413,15 +410,51 @@
       "required": ["project", "name", "url"]
     },
     "database": {
-      "type": "object",
-      "properties": {
-        "type": { "type": "string" },
-        "enabled": { "type": "boolean" },
-        "connectionString": { "type": "string" },
-        "options": { "type": "object" },
-        "params": { "type": "object" }
-      },
-      "required": ["type", "enabled"]
+      "description": "Configuration entry for a database",
+      "oneOf": [
+        {
+          "type": "object",
+          "name": "MongoDB Config",
+          "description": "Connection properties for mongoDB. Options may be passed in either the connection string or broken out in the options object",
+          "properties": {
+            "type": { "type": "string", "const": "mongo" },
+            "enabled": { "type": "boolean" },
+            "connectionString": {
+              "type": "string",
+              "description": "mongoDB Client connection string, see [https://www.mongodb.com/docs/manual/reference/connection-string/](https://www.mongodb.com/docs/manual/reference/connection-string/)"
+            },
+            "options": {
+              "type": "object",
+              "description": "mongoDB Client connection options. Please note that only custom options are described here, see [https://www.mongodb.com/docs/drivers/node/current/connect/connection-options/](https://www.mongodb.com/docs/drivers/node/current/connect/connection-options/) for all config options.",
+              "properties": {
+                "authMechanismProperties": {
+                  "type": "object",
+                  "properties": {
+                    "AWS_CREDENTIAL_PROVIDER": {
+                      "type": "boolean",
+                      "description": "If set to true, the `fromNodeProviderChain()` function from @aws-sdk/credential-providers is passed as the `AWS_CREDENTIAL_PROVIDER`"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "required": ["type", "enabled", "connectionString"]
+        },
+        {
+          "type": "object",
+          "name": "File-based DB Config",
+          "description": "Connection properties for an neDB file-based database",
+          "properties": {
+            "type": { "type": "string", "const": "fs" },
+            "enabled": { "type": "boolean" }
+          },
+          "required": ["type", "enabled"]
+        }
+      ]
     },
     "authenticationElement": {
       "type": "object",
@@ -470,6 +503,10 @@
                 "password": {
                   "type": "string",
                   "description": "Password for the given `username`."
+                },
+                "searchBase": {
+                  "type": "string",
+                  "description": "Override baseDN to query for users in other OUs or sub-trees."
                 }
               },
               "required": ["url", "baseDN", "username", "password"]
@@ -509,7 +546,14 @@
               "description": "Additional JWT configuration.",
               "properties": {
                 "clientID": { "type": "string" },
-                "authorityURL": { "type": "string" }
+                "authorityURL": { "type": "string" },
+                "expectedAudience": { "type": "string" },
+                "roleMapping": {
+                  "type": "object",
+                  "properties": {
+                    "admin": { "type": "object" }
+                  }
+                }
               },
               "required": ["clientID", "authorityURL"]
             }
@@ -524,6 +568,14 @@
         "pattern": { "type": "string" },
         "adminOnly": { "type": "boolean" },
         "loginRequired": { "type": "boolean" }
+      }
+    },
+    "roleMapping": {
+      "type": "object",
+      "description": "Mapping of application roles to JWT claims. Each key is a role name, and its value is an object mapping claim names to expected values.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": { "type": "string" }
       }
     }
   },

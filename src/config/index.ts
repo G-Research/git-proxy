@@ -2,10 +2,12 @@ import { existsSync, readFileSync } from 'fs';
 
 import defaultSettings from '../../proxy.config.json';
 import { GitProxyConfig, Convert } from './generated/config';
-import { ConfigLoader, Configuration } from './ConfigLoader';
+import { ConfigLoader } from './ConfigLoader';
+import { Configuration } from './types';
 import { serverConfig } from './env';
-import { configFile } from './file';
+import { getConfigFile } from './file';
 import { GIGABYTE } from '../constants';
+import { validateConfig } from './validators';
 
 // Cache for current configuration
 let _currentConfig: GitProxyConfig | null = null;
@@ -53,7 +55,7 @@ function loadFullConfiguration(): GitProxyConfig {
   const defaultConfig = cleanUndefinedValues(rawDefaultConfig);
 
   let userSettings: Partial<GitProxyConfig> = {};
-  const userConfigFile = process.env.CONFIG_FILE || configFile;
+  const userConfigFile = process.env.CONFIG_FILE || getConfigFile();
 
   if (existsSync(userConfigFile)) {
     try {
@@ -69,6 +71,15 @@ function loadFullConfiguration(): GitProxyConfig {
   }
 
   _currentConfig = mergeConfigurations(defaultConfig, userSettings);
+
+  if (!validateConfig(_currentConfig)) {
+    console.error(
+      'Invalid configuration: Please check your configuration file and restart GitProxy.',
+    );
+    throw new Error(
+      'Invalid configuration: Please check your configuration file and restart GitProxy.',
+    );
+  }
 
   return _currentConfig;
 }
@@ -127,12 +138,6 @@ function mergeConfigurations(
       defaultConfig.cookieSecret,
   };
 }
-
-// Get configured proxy URL
-export const getProxyUrl = (): string | undefined => {
-  const config = loadFullConfiguration();
-  return config.proxyUrl;
-};
 
 // Gets a list of authorised repositories
 export const getAuthorisedList = () => {
@@ -215,14 +220,19 @@ export const getAPIs = () => {
   return config.api || {};
 };
 
-export const getCookieSecret = (): string | undefined => {
+export const getCookieSecret = (): string => {
   const config = loadFullConfiguration();
+
+  if (!config.cookieSecret) {
+    throw new Error('cookieSecret is not set!');
+  }
+
   return config.cookieSecret;
 };
 
-export const getSessionMaxAgeHours = (): number | undefined => {
+export const getSessionMaxAgeHours = (): number => {
   const config = loadFullConfiguration();
-  return config.sessionMaxAgeHours;
+  return config.sessionMaxAgeHours || 24;
 };
 
 // Get commit related configuration
@@ -314,28 +324,44 @@ export const getMaxPackSizeBytes = (): number => {
 };
 
 export const getSSHConfig = () => {
+  // The proxy host key is auto-generated at startup if not present
+  // This key is only used to identify the proxy server to clients (like SSL cert)
+  // It is NOT configurable to ensure consistent behavior
+  const defaultHostKey = {
+    privateKeyPath: '.ssh/proxy_host_key',
+    publicKeyPath: '.ssh/proxy_host_key.pub',
+  };
+
   try {
     const config = loadFullConfiguration();
-    return config.ssh || { enabled: false };
+    const sshConfig = config.ssh || { enabled: false };
+
+    // The host key is a server identity, not user configuration
+    if (sshConfig.enabled) {
+      sshConfig.hostKey = defaultHostKey;
+    }
+
+    return sshConfig;
   } catch (error) {
     // If config loading fails due to SSH validation, try to get SSH config directly from user config
-    const userConfigFile = process.env.CONFIG_FILE || configFile;
+    const userConfigFile = process.env.CONFIG_FILE || getConfigFile();
     if (existsSync(userConfigFile)) {
       try {
         const userConfigContent = readFileSync(userConfigFile, 'utf-8');
         const userConfig = JSON.parse(userConfigContent);
-        return userConfig.ssh || { enabled: false };
+        const sshConfig = userConfig.ssh || { enabled: false };
+
+        if (sshConfig.enabled) {
+          sshConfig.hostKey = defaultHostKey;
+        }
+
+        return sshConfig;
       } catch (e) {
         console.error('Error loading SSH config:', e);
       }
     }
     return { enabled: false };
   }
-};
-
-export const getSSHProxyUrl = (): string | undefined => {
-  const proxyUrl = getProxyUrl();
-  return proxyUrl ? proxyUrl.replace('https://', 'git@') : undefined;
 };
 
 // Function to handle configuration updates
@@ -372,7 +398,7 @@ const handleConfigUpdate = async (newConfig: Configuration) => {
 
 // Initialize config loader
 function initializeConfigLoader() {
-  const config = loadFullConfiguration() as Configuration;
+  const config = loadFullConfiguration();
   _configLoader = new ConfigLoader(config);
 
   // Handle configuration updates
@@ -399,7 +425,6 @@ export const reloadConfiguration = async () => {
 
 // Initialize configuration on module load
 try {
-  loadFullConfiguration();
   initializeConfigLoader();
   console.log('Configuration loaded successfully');
 } catch (error) {

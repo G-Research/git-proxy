@@ -86,7 +86,9 @@ export interface GitProxyConfig {
    */
   sink?: Database[];
   /**
-   * SSH proxy server configuration
+   * SSH proxy server configuration. The proxy uses SSH agent forwarding to authenticate with
+   * remote Git servers (GitHub, GitLab, etc.) using the client's SSH keys. The proxy's own
+   * host key is auto-generated and only used to identify the proxy to connecting clients.
    */
   ssh?: SSH;
   /**
@@ -120,7 +122,8 @@ export interface GitProxyConfig {
  */
 export interface API {
   /**
-   * Configuration for the gitleaks (https://github.com/gitleaks/gitleaks) plugin
+   * Configuration for the gitleaks
+   * [https://github.com/gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) plugin
    */
   gitleaks?: Gitleaks;
   /**
@@ -132,7 +135,8 @@ export interface API {
 }
 
 /**
- * Configuration for the gitleaks (https://github.com/gitleaks/gitleaks) plugin
+ * Configuration for the gitleaks
+ * [https://github.com/gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) plugin
  */
 export interface Gitleaks {
   configPath?: string;
@@ -165,7 +169,7 @@ export interface Ls {
  */
 export interface AuthenticationElement {
   enabled: boolean;
-  type: Type;
+  type: AuthenticationElementType;
   /**
    * Additional Active Directory configuration supporting LDAP connection which can be used to
    * confirm group membership. For the full set of available options see the activedirectory 2
@@ -217,6 +221,10 @@ export interface AdConfig {
    */
   password: string;
   /**
+   * Override baseDN to query for users in other OUs or sub-trees.
+   */
+  searchBase?: string;
+  /**
    * Active Directory server to connect to, e.g. `ldap://ad.example.com`.
    */
   url: string;
@@ -233,6 +241,13 @@ export interface AdConfig {
 export interface JwtConfig {
   authorityURL: string;
   clientID: string;
+  expectedAudience?: string;
+  roleMapping?: RoleMapping;
+  [property: string]: any;
+}
+
+export interface RoleMapping {
+  admin?: { [key: string]: any };
   [property: string]: any;
 }
 
@@ -248,7 +263,7 @@ export interface OidcConfig {
   [property: string]: any;
 }
 
-export enum Type {
+export enum AuthenticationElementType {
   ActiveDirectory = 'ActiveDirectory',
   Jwt = 'jwt',
   Local = 'local',
@@ -283,8 +298,26 @@ export interface Question {
  * and used to provide additional guidance to the reviewer.
  */
 export interface QuestionTooltip {
-  links?: string[];
+  /**
+   * An array of links to display under the tooltip text, providing additional context about
+   * the question
+   */
+  links?: Link[];
+  /**
+   * Tooltip text
+   */
   text: string;
+}
+
+export interface Link {
+  /**
+   * Link text
+   */
+  text: string;
+  /**
+   * Link URL
+   */
+  url: string;
 }
 
 export interface AuthorisedRepo {
@@ -461,46 +494,80 @@ export interface RateLimit {
   windowMs: number;
 }
 
+/**
+ * Configuration entry for a database
+ *
+ * Connection properties for mongoDB. Options may be passed in either the connection string
+ * or broken out in the options object
+ *
+ * Connection properties for an neDB file-based database
+ */
 export interface Database {
+  /**
+   * mongoDB Client connection string, see
+   * [https://www.mongodb.com/docs/manual/reference/connection-string/](https://www.mongodb.com/docs/manual/reference/connection-string/)
+   */
   connectionString?: string;
   enabled: boolean;
-  options?: { [key: string]: any };
-  params?: { [key: string]: any };
-  type: string;
+  /**
+   * mongoDB Client connection options. Please note that only custom options are described
+   * here, see
+   * [https://www.mongodb.com/docs/drivers/node/current/connect/connection-options/](https://www.mongodb.com/docs/drivers/node/current/connect/connection-options/)
+   * for all config options.
+   */
+  options?: Options;
+  type: DatabaseType;
   [property: string]: any;
 }
 
 /**
- * SSH proxy server configuration
+ * mongoDB Client connection options. Please note that only custom options are described
+ * here, see
+ * [https://www.mongodb.com/docs/drivers/node/current/connect/connection-options/](https://www.mongodb.com/docs/drivers/node/current/connect/connection-options/)
+ * for all config options.
+ */
+export interface Options {
+  authMechanismProperties?: AuthMechanismProperties;
+  [property: string]: any;
+}
+
+export interface AuthMechanismProperties {
+  /**
+   * If set to true, the `fromNodeProviderChain()` function from @aws-sdk/credential-providers
+   * is passed as the `AWS_CREDENTIAL_PROVIDER`
+   */
+  AWS_CREDENTIAL_PROVIDER?: boolean;
+  [property: string]: any;
+}
+
+export enum DatabaseType {
+  FS = 'fs',
+  Mongo = 'mongo',
+}
+
+/**
+ * SSH proxy server configuration. The proxy uses SSH agent forwarding to authenticate with
+ * remote Git servers (GitHub, GitLab, etc.) using the client's SSH keys. The proxy's own
+ * host key is auto-generated and only used to identify the proxy to connecting clients.
  */
 export interface SSH {
   /**
-   * Enable SSH proxy server
+   * Custom error message shown when SSH agent forwarding is not enabled or no keys are loaded
+   * in the client's SSH agent. If not specified, a default message with git config commands
+   * will be shown. This allows organizations to customize instructions based on their
+   * security policies.
+   */
+  agentForwardingErrorMessage?: string;
+  /**
+   * Enable SSH proxy server. When enabled, clients can connect via SSH and the proxy will
+   * forward their SSH agent to authenticate with remote Git servers.
    */
   enabled: boolean;
   /**
-   * SSH host key configuration
-   */
-  hostKey?: HostKey;
-  /**
-   * Port for SSH proxy server to listen on
+   * Port for SSH proxy server to listen on. Clients connect to this port instead of directly
+   * to GitHub/GitLab.
    */
   port?: number;
-  [property: string]: any;
-}
-
-/**
- * SSH host key configuration
- */
-export interface HostKey {
-  /**
-   * Path to private SSH host key
-   */
-  privateKeyPath: string;
-  /**
-   * Path to public SSH host key
-   */
-  publicKeyPath: string;
   [property: string]: any;
 }
 
@@ -786,7 +853,7 @@ const typeMap: any = {
   AuthenticationElement: o(
     [
       { json: 'enabled', js: 'enabled', typ: true },
-      { json: 'type', js: 'type', typ: r('Type') },
+      { json: 'type', js: 'type', typ: r('AuthenticationElementType') },
       { json: 'adConfig', js: 'adConfig', typ: u(undefined, r('AdConfig')) },
       { json: 'adminGroup', js: 'adminGroup', typ: u(undefined, '') },
       { json: 'domain', js: 'domain', typ: u(undefined, '') },
@@ -800,6 +867,7 @@ const typeMap: any = {
     [
       { json: 'baseDN', js: 'baseDN', typ: '' },
       { json: 'password', js: 'password', typ: '' },
+      { json: 'searchBase', js: 'searchBase', typ: u(undefined, '') },
       { json: 'url', js: 'url', typ: '' },
       { json: 'username', js: 'username', typ: '' },
     ],
@@ -809,9 +877,12 @@ const typeMap: any = {
     [
       { json: 'authorityURL', js: 'authorityURL', typ: '' },
       { json: 'clientID', js: 'clientID', typ: '' },
+      { json: 'expectedAudience', js: 'expectedAudience', typ: u(undefined, '') },
+      { json: 'roleMapping', js: 'roleMapping', typ: u(undefined, r('RoleMapping')) },
     ],
     'any',
   ),
+  RoleMapping: o([{ json: 'admin', js: 'admin', typ: u(undefined, m('any')) }], 'any'),
   OidcConfig: o(
     [
       { json: 'callbackURL', js: 'callbackURL', typ: '' },
@@ -835,8 +906,15 @@ const typeMap: any = {
   ),
   QuestionTooltip: o(
     [
-      { json: 'links', js: 'links', typ: u(undefined, a('')) },
+      { json: 'links', js: 'links', typ: u(undefined, a(r('Link'))) },
       { json: 'text', js: 'text', typ: '' },
+    ],
+    false,
+  ),
+  Link: o(
+    [
+      { json: 'text', js: 'text', typ: '' },
+      { json: 'url', js: 'url', typ: '' },
     ],
     false,
   ),
@@ -904,24 +982,34 @@ const typeMap: any = {
     [
       { json: 'connectionString', js: 'connectionString', typ: u(undefined, '') },
       { json: 'enabled', js: 'enabled', typ: true },
-      { json: 'options', js: 'options', typ: u(undefined, m('any')) },
-      { json: 'params', js: 'params', typ: u(undefined, m('any')) },
-      { json: 'type', js: 'type', typ: '' },
+      { json: 'options', js: 'options', typ: u(undefined, r('Options')) },
+      { json: 'type', js: 'type', typ: r('DatabaseType') },
     ],
+    'any',
+  ),
+  Options: o(
+    [
+      {
+        json: 'authMechanismProperties',
+        js: 'authMechanismProperties',
+        typ: u(undefined, r('AuthMechanismProperties')),
+      },
+    ],
+    'any',
+  ),
+  AuthMechanismProperties: o(
+    [{ json: 'AWS_CREDENTIAL_PROVIDER', js: 'AWS_CREDENTIAL_PROVIDER', typ: u(undefined, true) }],
     'any',
   ),
   SSH: o(
     [
+      {
+        json: 'agentForwardingErrorMessage',
+        js: 'agentForwardingErrorMessage',
+        typ: u(undefined, ''),
+      },
       { json: 'enabled', js: 'enabled', typ: true },
-      { json: 'hostKey', js: 'hostKey', typ: u(undefined, r('HostKey')) },
       { json: 'port', js: 'port', typ: u(undefined, 3.14) },
-    ],
-    'any',
-  ),
-  HostKey: o(
-    [
-      { json: 'privateKeyPath', js: 'privateKeyPath', typ: '' },
-      { json: 'publicKeyPath', js: 'publicKeyPath', typ: '' },
     ],
     'any',
   ),
@@ -955,5 +1043,6 @@ const typeMap: any = {
     ],
     'any',
   ),
-  Type: ['ActiveDirectory', 'jwt', 'local', 'openidconnect'],
+  AuthenticationElementType: ['ActiveDirectory', 'jwt', 'local', 'openidconnect'],
+  DatabaseType: ['fs', 'mongo'],
 };
